@@ -347,12 +347,27 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpace.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        // 必须给一个**明确有限的宽度**。
+        //
+        // 根因：showModalBottomSheet + isScrollControlled 的 builder
+        // 拿到的横向约束是**无界**的（w=Infinity）。于是 Column 的
+        // 子项按固有宽度布局，Row 里的 Expanded / OutlinedButton
+        // 收到 BoxConstraints(w=Infinity)，布局阶段直接抛
+        // 「BoxConstraints forces an infinite width」。
+        //
+        // 症状就是用户看到的：遮罩出现，内容一片空白 ——
+        // 因为渲染在布局阶段就中断了。
+        //
+        // 注意不能写 maxWidth: double.infinity —— 那仍然是无界，
+        // 等于没约束。必须取屏幕实际宽度。
+        child: SizedBox(
+          width: MediaQuery.sizeOf(context).width,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Text(
                 _isEdit ? '编辑端点' : '添加端点',
                 style: TextStyle(
@@ -424,11 +439,21 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                     ),
                   ),
                   const SizedBox(width: AppSpace.xs),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                  // 按钮不能用 Expanded（会和输入框抢宽度），
+                  // 但必须给一个**有限**的宽度约束 —— 否则它在
+                  // 无界环境里会被要求撑到 Infinity。
+                  SizedBox(
+                    width: 92,
+                    height: 48,
                     child: OutlinedButton(
                       onPressed: _loadingModels ? null : _loadModels,
-                      child: Text(_loadingModels ? '获取中' : '获取列表'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                      child: Text(
+                        _loadingModels ? '获取中' : '获取列表',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                   ),
                 ],
@@ -520,6 +545,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

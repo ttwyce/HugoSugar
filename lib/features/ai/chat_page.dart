@@ -801,81 +801,125 @@ class _HistorySheetState extends State<_HistorySheet> {
     final c = context.appColors;
     final sessions = widget.controller.sessions;
 
+    // 三处结构性修正（都是真机上会出问题的地方）：
+    //
+    // 1. Column 的横向约束。弹窗 builder 拿到的是无界宽度，
+    //    ListTile / IconButton 在这种环境下再叠一层无界就可能
+    //    触发布局断言 —— 和端点弹窗是同一类问题。
+    //    用 SizedBox 钉死宽度。
+    //
+    // 2. 高度。原来只有内层 ListView 限了 360，外层 Column
+    //    是 mainAxisSize.min，会话一多整体会超出屏幕且**不能滚动**，
+    //    底部条目永远点不到。改成外层可滚动 + 高度上限。
+    //
+    // 3. 空态。用 Center + 固定高度，避免极小高度下只剩一条缝。
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpace.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '历史对话',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: c.textPrimary,
-              ),
-            ),
-            const SizedBox(height: AppSpace.sm),
-            if (sessions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
-                child: Text(
-                  '还没有历史对话',
-                  style: TextStyle(fontSize: 12, color: c.textTertiary),
-                ),
-              )
-            else
-              Container(
-                constraints: const BoxConstraints(maxHeight: 360),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: sessions.length,
-                  itemBuilder: (_, i) {
-                    final s = sessions[i];
-                    final active = s.id == widget.controller.session?.id;
-                    return ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        active ? Icons.chat_bubble : Icons.chat_bubble_outline,
-                        size: 16,
-                        color: active ? c.accent : c.textTertiary,
-                      ),
-                      title: Text(
-                        s.title.isEmpty ? '未命名' : s.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      child: SizedBox(
+        width: MediaQuery.sizeOf(context).width,
+        child: ConstrainedBox(
+          // 最多占屏幕高度的 70%，保证底部按钮和内容都够用
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '历史对话',
                         style: TextStyle(
-                          fontSize: 13,
-                          color: active ? c.accent : c.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: c.textPrimary,
                         ),
                       ),
-                      subtitle: Text(
-                        '${s.entries.length} 条 · '
-                        '${_fmtTime(s.updatedAt)}',
-                        style: TextStyle(fontSize: 11, color: c.textTertiary),
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(
-                          Icons.delete_outline,
-                          size: 16,
+                    ),
+                    if (sessions.isNotEmpty)
+                      Text(
+                        '${sessions.length} 个',
+                        style: TextStyle(
+                          fontSize: 11,
                           color: c.textTertiary,
                         ),
-                        onPressed: () async {
-                          await widget.controller.deleteSession(s.id);
-                          if (context.mounted) setState(() {});
-                        },
                       ),
-                      onTap: () async {
-                        await widget.controller.openSession(s.id);
-                        if (context.mounted) Navigator.of(context).pop();
-                      },
-                    );
-                  },
+                  ],
                 ),
-              ),
-          ],
+                const SizedBox(height: AppSpace.sm),
+                if (sessions.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        '还没有历史对话',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: c.textTertiary),
+                      ),
+                    ),
+                  )
+                else
+                  // Flexible 而不是固定高度：会话少时按内容撑开，
+                  // 多时才滚动，不会出现大片空白。
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: sessions.length,
+                      itemBuilder: (_, i) {
+                        final s = sessions[i];
+                        final active = s.id == widget.controller.session?.id;
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            active
+                                ? Icons.chat_bubble
+                                : Icons.chat_bubble_outline,
+                            size: 16,
+                            color: active ? c.accent : c.textTertiary,
+                          ),
+                          title: Text(
+                            s.title.isEmpty ? '未命名' : s.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: active ? c.accent : c.textPrimary,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${s.entries.length} 条 · ${_fmtTime(s.updatedAt)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: c.textTertiary,
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: c.textTertiary,
+                            ),
+                            onPressed: () async {
+                              await widget.controller.deleteSession(s.id);
+                              if (context.mounted) setState(() {});
+                            },
+                          ),
+                          onTap: () async {
+                            await widget.controller.openSession(s.id);
+                            if (context.mounted) Navigator.of(context).pop();
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
