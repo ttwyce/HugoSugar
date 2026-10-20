@@ -5,43 +5,43 @@ void main() {
   group('normalizeRepoUrl', () {
     test('标准的 https + .git 保持不变', () {
       expect(
-        GitService.normalizeRepoUrl('https://github.com/ttwyce/HugoSugar.git'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('https://github.com/octocat/Hello-World.git'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
     test('缺 .git 会自动补上', () {
       expect(
-        GitService.normalizeRepoUrl('https://github.com/ttwyce/HugoSugar'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('https://github.com/octocat/Hello-World'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
     test('缺协议头会补 https', () {
       expect(
-        GitService.normalizeRepoUrl('github.com/ttwyce/HugoSugar'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('github.com/octocat/Hello-World'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
     test('owner/repo 简写可展开', () {
       expect(
-        GitService.normalizeRepoUrl('ttwyce/HugoSugar'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('octocat/Hello-World'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
     test('SSH 形式转 https', () {
       expect(
-        GitService.normalizeRepoUrl('git@github.com:ttwyce/HugoSugar.git'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('git@github.com:octocat/Hello-World.git'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
     test('去掉尾部多余斜杠', () {
       expect(
-        GitService.normalizeRepoUrl('https://github.com/ttwyce/HugoSugar///'),
-        'https://github.com/ttwyce/HugoSugar.git',
+        GitService.normalizeRepoUrl('https://github.com/octocat/Hello-World///'),
+        'https://github.com/octocat/Hello-World.git',
       );
     });
 
@@ -68,7 +68,7 @@ void main() {
 
     test('只有仓库名、没有 owner 时报错', () {
       expect(
-        () => GitService.normalizeRepoUrl('HugoSugar'),
+        () => GitService.normalizeRepoUrl('Hello-World'),
         throwsA(isA<ArgumentError>()),
       );
     });
@@ -77,9 +77,9 @@ void main() {
   group('splitRepoUrl', () {
     test('解析出 owner 和 repo', () {
       final r = GitService.splitRepoUrl(
-        'https://github.com/ttwyce/HugoSugar.git',
+        'https://github.com/octocat/Hello-World.git',
       );
-      expect(r, ('ttwyce', 'HugoSugar'));
+      expect(r, ('octocat', 'Hello-World'));
     });
 
     test('无 .git 也能解析', () {

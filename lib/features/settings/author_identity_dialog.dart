@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/settings/settings_controller.dart';
+import 'author_suggestion.dart';
 
 /// 提交作者身份设置。
 ///
@@ -20,17 +21,19 @@ class AuthorIdentityDialog extends StatefulWidget {
   const AuthorIdentityDialog({
     super.key,
     required this.controller,
-    this.suggestedName,
-    this.suggestedEmail,
+    this.suggestions,
   });
 
   final SettingsController controller;
 
-  /// 令牌解析出的登录名，作为占位提示
-  final String? suggestedName;
-
-  /// 自动推断到的邮箱，作为占位提示
-  final String? suggestedEmail;
+  /// 自动推断结果的 Future。
+  ///
+  /// 传 **Future 而不是已解析的值**，是为了让弹窗立刻出现：
+  /// 这个查询要走两次 GitHub API，网络慢时可能要几秒甚至超时。
+  /// 它只影响输入框的灰色占位提示，绝不该阻塞用户输入。
+  /// 未来完成时会自动刷新占位文案；用户可能早就填完保存了，
+  /// 那种情况下这个值直接被丢弃，不会造成任何影响。
+  final Future<AuthorSuggestion?>? suggestions;
 
   @override
   State<AuthorIdentityDialog> createState() => _AuthorIdentityDialogState();
@@ -41,11 +44,26 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
   late final TextEditingController _emailCtrl;
   String? _error;
 
+  /// 推断结果，回来之前是 null（显示通用占位文案）
+  AuthorSuggestion? _suggestion;
+
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.controller.authorName);
     _emailCtrl = TextEditingController(text: widget.controller.authorEmail);
+
+    // 不 await，让 UI 先渲染出来。回来时如果用户已经关掉弹窗，
+    // then 里查 mounted 直接跳过。
+    //
+    // 注意 `Completer` 已经完成的情况：then 会**同步**执行，
+    // 此时还是 initState 阶段，直接 setState 会抛
+    // "setState() called during build"。所以先只赋值，
+    // 只在需要时（已挂载且已过首帧）才 setState。
+    widget.suggestions?.then((s) {
+      if (!mounted || s == null) return;
+      setState(() => _suggestion = s);
+    });
   }
 
   @override
@@ -81,11 +99,18 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final namePlaceholder =
-        (widget.suggestedName ?? '').isEmpty ? 'GitHub 登录名' : widget.suggestedName!;
-    final emailPlaceholder = (widget.suggestedEmail ?? '').isEmpty
-        ? '自动推断的 noreply 地址'
-        : widget.suggestedEmail!;
+    final s = _suggestion;
+
+    // 注意：这里必须用 helperText 而不是 hintText 来展示建议值。
+    // Material 的 hintText 只在「输入框为空 **且** 处于聚焦状态」时显示，
+    // 而 labelText 在未聚焦时会浮在框内挡住它 —— 结果就是用户根本
+    // 看不到建议值。helperText 则始终显示在输入框下方。
+    final nameHelper = (s?.name ?? '').isEmpty
+        ? '留空则用 GitHub 登录名'
+        : '留空则用 ${s!.name}';
+    final emailHelper = (s?.email ?? '').isEmpty
+        ? '留空则自动推断'
+        : '留空则用 ${s!.email}';
 
     return Padding(
       padding: EdgeInsets.only(
@@ -122,8 +147,8 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
             controller: _nameCtrl,
             decoration: InputDecoration(
               labelText: '作者名',
-              hintText: namePlaceholder,
-              helperText: '留空则用 GitHub 登录名',
+              helperText: nameHelper,
+              helperMaxLines: 2,
               helperStyle: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
           ),
@@ -134,8 +159,8 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
             autocorrect: false,
             decoration: InputDecoration(
               labelText: '作者邮箱',
-              hintText: emailPlaceholder,
-              helperText: '留空则自动推断',
+              helperText: emailHelper,
+              helperMaxLines: 2,
               helperStyle: TextStyle(fontSize: 11, color: c.textTertiary),
               errorText: _error,
             ),

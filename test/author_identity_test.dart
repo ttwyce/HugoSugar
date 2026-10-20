@@ -13,11 +13,11 @@ void main() {
 
     test('toJson / fromJson 往返不丢字段', () {
       const s = AppSettings(
-        authorName: 'ttwyce',
+        authorName: 'octocat',
         authorEmail: 'me@example.com',
       );
       final back = AppSettings.fromJson(s.toJson());
-      expect(back.authorName, 'ttwyce');
+      expect(back.authorName, 'octocat');
       expect(back.authorEmail, 'me@example.com');
     });
 
@@ -37,11 +37,11 @@ void main() {
       try {
         final store = SettingsStore(File('${dir.path}/settings.json'));
         await store.save(const AppSettings(
-          authorName: 'ttwyce',
+          authorName: 'octocat',
           authorEmail: 'me@example.com',
         ));
         final loaded = await store.load();
-        expect(loaded.authorName, 'ttwyce');
+        expect(loaded.authorName, 'octocat');
         expect(loaded.authorEmail, 'me@example.com');
       } finally {
         dir.deleteSync(recursive: true);

@@ -102,8 +102,8 @@ class GitHubException implements Exception {
 /// 提交作者和「是谁推的」是两件事：push 用令牌鉴权（令牌属于谁，
 /// 就是谁推的），但 commit 里的 author 字段是**字符串**，GitHub 靠
 /// 其中的邮箱把提交关联到用户。所以这两个值必须取自真实账号，
-/// 不能写死 —— 早先硬编码成 `HugoSugar <hugosugar@users.noreply...>`，
-/// 结果用户在 GitHub 上看到的提交作者是一个陌生名字。
+/// 不能写死 —— 早先硬编码了一个应用名 + 拼出来的 noreply 邮箱，
+/// 结果用户在 GitHub 上看到的提交作者是一个陌生名字，而不是自己。
 class GitHubProfile {
   const GitHubProfile({
     required this.login,
@@ -111,7 +111,7 @@ class GitHubProfile {
     required this.email,
   });
 
-  /// 账号登录名，如 `ttwyce`
+  /// 账号登录名，如 `octocat`
   final String login;
 
   /// 展示名（GitHub 的 Name 字段，没填就回落到 login）

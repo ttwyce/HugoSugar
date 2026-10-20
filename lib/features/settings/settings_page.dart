@@ -8,6 +8,7 @@ import '../../core/site/site_controller.dart';
 import '../../core/site/token_store.dart';
 import '../../shared/widgets.dart';
 import 'author_identity_dialog.dart';
+import 'author_suggestion.dart';
 import 'token_dialog.dart';
 
 /// 设置页：标准 iOS 风格分组列表。
@@ -64,40 +65,47 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _editAuthor() async {
-    // 用令牌试着拿一下登录名/邮箱，只作为输入框的占位提示；
-    // 拿不到也不影响手填。
-    String? suggestedName;
-    String? suggestedEmail;
-    try {
-      final store = await TokenStore.open();
-      final token = await store.read();
-      if (token != null && token.isNotEmpty) {
-        final api = GitHubApi();
-        try {
-          final p = await api.fetchProfile(token);
-          suggestedName = p.commitName;
-          suggestedEmail = p.email.isEmpty ? null : p.email;
-        } finally {
-          api.dispose();
-        }
-      }
-    } catch (_) {
-      // 网络/权限问题都忽略，纯提示用途
-    }
-    // 网络请求期间用户可能已经离开设置页，这里必须查 State 的 mounted，
-    // 而不是外层传进来的 context（它可能已经失效）。
-    if (!mounted) return;
+    // 关键：**先把请求发出去，但不 await**，弹窗立刻出现。
+    //
+    // 早先这里是 `await fetchProfile(...)` 再弹窗，于是用户点「提交作者」
+    // 后要干等两个 HTTP 往返（/user + /user/emails，各 20 秒超时）。
+    // 而这份数据的唯一用途只是输入框里的灰色占位提示 ——
+    // 让一个纯装饰性的提示阻塞交互，是完全本末倒置的。
+    final suggestions = _fetchAuthorSuggestions();
 
     await showModalBottomSheet<void>(
-      context: context, // State.context，已过 mounted 检查
+      context: context,
       isScrollControlled: true,
       builder: (_) => AuthorIdentityDialog(
         controller: widget.settingsController,
-        suggestedName: suggestedName,
-        suggestedEmail: suggestedEmail,
+        suggestions: suggestions,
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  /// 查询账号资料，仅用于对话框里的占位提示。
+  ///
+  /// 任何失败（无令牌、403、超时）都返回 null，让占位提示保持通用文案。
+  /// 这个值永远不该影响用户能否填写和保存。
+  Future<AuthorSuggestion?> _fetchAuthorSuggestions() async {
+    try {
+      final store = await TokenStore.open();
+      final token = await store.read();
+      if (token == null || token.isEmpty) return null;
+      final api = GitHubApi();
+      try {
+        final p = await api.fetchProfile(token);
+        return AuthorSuggestion(
+          name: p.commitName,
+          email: p.email.isEmpty ? null : p.email,
+        );
+      } finally {
+        api.dispose();
+      }
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
