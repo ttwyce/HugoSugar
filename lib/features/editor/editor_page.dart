@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_theme.dart';
+import '../../core/edit/undo_history.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
 import 'markdown_highlighter.dart';
+import 'markdown_toolbar.dart';
 
 /// 保存状态
 enum _SaveState { idle, dirty, saving, saved, failed }
@@ -49,6 +51,12 @@ class _EditorPageState extends State<EditorPage> {
   Timer? _chromeTimer;
   Timer? _saveTimer;
   bool _chromeVisible = true;
+
+  /// 撤销 / 重做
+  final _history = EditHistory();
+
+  /// 正在执行撤销 / 重做，此时文本变更是「程序化」的，不记历史
+  bool _applyingHistory = false;
 
   bool _loading = false;
   String? _loadError;
@@ -97,6 +105,7 @@ class _EditorPageState extends State<EditorPage> {
     if (path == null || ctrl == null) {
       // 新建空稿，直接可编辑
       _ready = true;
+      _history.seed(_titleCtrl.text, _bodyCtrl.text);
       return;
     }
 
@@ -122,6 +131,8 @@ class _EditorPageState extends State<EditorPage> {
       // 刚读入的内容不算改动
       _saveState = _SaveState.idle;
     });
+    // 载入后的状态是撤销栈的起点
+    _history.seed(doc.title, doc.body);
   }
 
   @override
@@ -138,6 +149,7 @@ class _EditorPageState extends State<EditorPage> {
     _findCtrl.dispose();
     _replaceCtrl.dispose();
     _scrollCtrl.dispose();
+    _history.dispose();
     super.dispose();
   }
 
@@ -154,6 +166,7 @@ class _EditorPageState extends State<EditorPage> {
     if (!_ready) return;
     _markDirty();
     _onTyping();
+    _recordHistory();
     if (_findOpen) _recomputeMatches();
   }
 
@@ -163,6 +176,56 @@ class _EditorPageState extends State<EditorPage> {
     // 改标题也算「正在写」，应该和改正文一样重置淡出计时器。
     // 之前漏了这一行，导致在标题里打字时顶栏可能就在你眼前暗下去。
     _onTyping();
+    _recordHistory();
+  }
+
+  // ── 撤销 / 重做 ──────────────────────────────────
+
+  void _recordHistory() {
+    // 撤销本身触发的文本变更不能再入栈，否则会产生「撤销的历史」
+    if (_applyingHistory) return;
+    _history.record(_titleCtrl.text, _bodyCtrl.text);
+    // canUndo 变化要反映到工具栏按钮上
+    setState(() {});
+  }
+
+  void _undo() {
+    final snap = _history.undo();
+    if (snap == null) return;
+    _applySnapshot(snap);
+  }
+
+  void _redo() {
+    final snap = _history.redo();
+    if (snap == null) return;
+    _applySnapshot(snap);
+  }
+
+  /// 把快照写回两个输入框。
+  ///
+  /// 必须 mute 掉 record，用 _applyingHistory 挡着；同时把光标放在末尾，
+  /// 因为原文长度变了，旧的光标位置可能越界。
+  void _applySnapshot(EditSnapshot snap) {
+    _applyingHistory = true;
+    _history.mute(true);
+    if (_titleCtrl.text != snap.title) {
+      _titleCtrl.value = TextEditingValue(
+        text: snap.title,
+        selection: TextSelection.collapsed(offset: snap.title.length),
+      );
+    }
+    if (_bodyCtrl.text != snap.body) {
+      _bodyCtrl.value = TextEditingValue(
+        text: snap.body,
+        selection: TextSelection.collapsed(offset: snap.body.length),
+      );
+    }
+    _history.mute(false);
+    _applyingHistory = false;
+
+    _markDirty();
+    _onTyping();
+    setState(() {});
   }
 
   void _markDirty() {
@@ -491,8 +554,12 @@ class _EditorPageState extends State<EditorPage> {
                         ),
                       ),
                     ),
-                    // 给固定显示的底部状态栏留出高度，避免最后一行文字被盖住
-                    SizedBox(height: 44 + MediaQuery.of(context).padding.bottom),
+                    // 给固定显示的底部区域留高度：工具栏 46 + 状态行 44 + 底部安全区
+                    SizedBox(
+                      height: 46 +
+                          44 +
+                          MediaQuery.of(context).padding.bottom,
+                    ),
                   ],
                 ),
               ),
@@ -545,52 +612,94 @@ class _EditorPageState extends State<EditorPage> {
               ),
             ),
 
-            // 底部状态：**不参与淡出**。
-            // 设计文档只要求顶栏淡出，这里的字数 / 保存状态 / 预览 / AI 是操作入口，
-            // 淡到 15% 等于让人找不到，所以固定常驻。
+            // 底部：Markdown 工具栏 + 状态行
+            // **整体不参与淡出** —— 设计文档只要求顶栏淡出，
+            // 这里是操作入口，淡到 15% 等于让人找不到。
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
-                color: c.background,
-                child: SafeArea(
-                  top: false,
-                    child: Row(
-                      children: [
-                        Text(
-                          '$_charCount 字',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: c.textTertiary,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MarkdownToolbar(
+                    controller: _bodyCtrl,
+                    onChanged: () {
+                      // 工具栏插入属于用户操作，要记历史、重置淡出、标记脏
+                      _onBodyChanged();
+                      _bodyFocus.requestFocus();
+                    },
+                    onUndo: _undo,
+                    onRedo: _redo,
+                    canUndo: _history.canUndo,
+                    canRedo: _history.canRedo,
+                    onDismissKeyboard: () => _bodyFocus.unfocus(),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+                    color: c.background,
+                    child: SafeArea(
+                      top: false,
+                      child: Row(
+                        children: [
+                          Text(
+                            '$_charCount 字',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: c.textTertiary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppSpace.xs),
-                        _SaveIndicator(
-                          state: _saveState,
-                          error: _saveError,
-                        ),
-                        const Spacer(),
-                        TextButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.visibility_outlined, size: 16),
-                          label: const Text('预览'),
-                        ),
-                        const SizedBox(width: AppSpace.xxs),
-                        TextButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.auto_awesome, size: 16),
-                          label: const Text('AI'),
-                        ),
-                      ],
+                          const SizedBox(width: AppSpace.xs),
+                          _SaveIndicator(
+                            state: _saveState,
+                            error: _saveError,
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _showPreviewSoon,
+                            icon: const Icon(
+                              Icons.visibility_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('预览'),
+                          ),
+                          const SizedBox(width: AppSpace.xxs),
+                          TextButton.icon(
+                            onPressed: _showAiSoon,
+                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            label: const Text('AI'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 预览和写作 AI 属于后续里程碑。
+  /// 之前这两个按钮是 `onPressed: () {}`，点了毫无反应，像是卡住 ——
+  /// 现在明确告诉用户「还没做」，比假装响应诚实。
+  void _showPreviewSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showAiSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('写作 AI 在 M5 提供'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
