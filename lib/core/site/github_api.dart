@@ -137,7 +137,16 @@ class GitHubApi {
   final http.Client _client;
 
   static const _base = 'https://api.github.com';
+
+  /// 常规请求超时。列仓库这类用户明确在等的操作可以用满 20 秒。
   static const _timeout = Duration(seconds: 20);
+
+  /// 「顺带查一下」类请求的超时。
+  ///
+  /// 用于 `/user` 这类只为补默认值的调用：结果缺失有兜底，不值得让
+  /// 用户干等 20 秒。手机上 TLS 握手失败通常在前 5 秒内就能确定，
+  /// 拖到 20 秒只会让「推送」和「登录」显得像卡死。
+  static const _quickTimeout = Duration(seconds: 6);
 
   void dispose() => _client.close();
 
@@ -166,10 +175,15 @@ class GitHubApi {
   /// `/user` 的 `email` 字段默认是 null（除非用户公开了邮箱），
   /// 所以还要问一次 `/user/emails`。
   Future<GitHubProfile> fetchProfile(String token) async {
-    final res = await _request(() => _client.get(
-          Uri.parse('$_base/user'),
-          headers: _headers(token),
-        ));
+    // 用短超时：这个调用的结果只用于「补默认作者名」，
+    // 拿不到有兜底，不该让用户等满 20 秒。
+    final res = await _request(
+      () => _client.get(
+        Uri.parse('$_base/user'),
+        headers: _headers(token),
+      ),
+      timeout: _quickTimeout,
+    );
 
     if (res.statusCode == 401) {
       throw GitHubException(
@@ -357,11 +371,15 @@ class GitHubApi {
   }
 
   /// 统一处理网络层异常，转成可读提示
+  ///
+  /// [timeout] 不传则用默认 20 秒。只为补默认值的调用传 [_quickTimeout]，
+  /// 避免用户在一个不影响结果的操作上等待过久。
   Future<http.Response> _request(
-    Future<http.Response> Function() send,
-  ) async {
+    Future<http.Response> Function() send, {
+    Duration? timeout,
+  }) async {
     try {
-      return await send().timeout(_timeout);
+      return await send().timeout(timeout ?? _timeout);
     } on TimeoutException {
       throw GitHubException(
         GitHubErrorKind.network,

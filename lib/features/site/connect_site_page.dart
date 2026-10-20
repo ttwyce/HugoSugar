@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/settings/settings_controller.dart';
+import '../settings/author_identity_dialog.dart';
+import '../settings/author_suggestion.dart';
+
 import '../../app/theme/app_colors.dart';
 import '../../core/site/github_api.dart';
 import '../../core/site/site_controller.dart';
@@ -11,9 +15,16 @@ import '../../shared/widgets.dart';
 /// 相比手填 URL 的好处：不用记仓库名、不用怕大小写错，
 /// 而且在列表阶段就能发现「token 权限不足」这类问题。
 class ConnectSitePage extends StatefulWidget {
-  const ConnectSitePage({super.key, required this.controller});
+  const ConnectSitePage({
+    super.key,
+    required this.controller,
+    required this.settingsController,
+  });
 
   final SiteController controller;
+
+  /// 用于在自动获取账号资料失败时，强制用户手填提交作者。
+  final SettingsController settingsController;
 
   @override
   State<ConnectSitePage> createState() => _ConnectSitePageState();
@@ -89,7 +100,14 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     });
 
     try {
+      // 1) 校验令牌并拿登录名。
+      //
+      // 这里**必须**成功：令牌无效就没法继续，而且登录名会用于
+      // 校验通过后的展示。`verifyToken` 内部还会顺带查邮箱，
+      // 但那部分失败已经在 fetchProfile 里降级处理了（拿不到就
+      // 空串），不会抛到这里。
       final login = await widget.controller.verifyToken(token);
+
       final repos = await widget.controller.listRepos(token);
 
       if (!mounted) return;
@@ -99,6 +117,14 @@ class _ConnectSitePageState extends State<ConnectSitePage>
         _repos = repos;
         _loading = false;
       });
+
+      // 2) 再确保有可用的提交作者身份。
+      // 用户没填完就中断的话，回到未验证状态，避免出现
+      // 「列表能看、但一克隆就缺身份」的不一致。
+      final ok = await _ensureAuthorIdentityOrAsk();
+      if (!ok && mounted) {
+        setState(() => _verified = false);
+      }
     } on GitHubException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -115,6 +141,66 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     }
   }
 
+  /// 确保存在可用的提交作者身份。
+  ///
+  /// 规则：
+  /// - 已经手填过（名和邮箱都有）→ 什么都不做
+  /// - 自动能取到 → 静默存下，用户不用管
+  /// - 自动取不到 → 弹出**必填**对话框，用户不填完无法继续
+  ///
+  /// 为什么最后一种要强制：
+  /// commit 的作者身份是必须的，取不到就只能用 `noreply@localhost`
+  /// 这种不关联账号的占位。用户不会主动去看设置，等到推送后发现
+  /// 提交者是陌生名字才来问「为什么我的贡献格子不亮」。
+  /// 在登录这一步就问清楚，是成本最低的时机 —— 此时用户本来就在
+  /// 配置流程里，心态上就是要填东西。
+  /// 确保有作者身份，返回是否已具备。
+  ///
+  /// 返回 false 表示用户没填完就退出了（系统级中断），
+  /// 调用方应当中止后续流程，而不是带着占位身份继续。
+  Future<bool> _ensureAuthorIdentityOrAsk() async {
+    final sc = widget.settingsController;
+
+    // 已经填过就不打扰
+    if (sc.authorName.trim().isNotEmpty &&
+        sc.authorEmail.trim().isNotEmpty) {
+      return true;
+    }
+
+    // 尝试自动获取。失败返回 null，不抛异常。
+    final suggestion = await fetchAuthorSuggestion(token: _tokenCtrl.text.trim());
+
+    if (suggestion != null && suggestion.isComplete) {
+      await sc.setAuthorIdentity(
+        name: suggestion.name,
+        email: suggestion.email!,
+      );
+      return true;
+    }
+
+    // 取不到 → 强制手填
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      // 必填模式下不允许点遮罩关闭
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        // 也不允许返回键退出，必须填完点「继续」
+        canPop: false,
+        child: Dialog(
+          child: AuthorIdentityDialog(
+            controller: sc,
+            suggestions: Future.value(suggestion),
+            required: true,
+          ),
+        ),
+      ),
+    );
+
+    // 对话框只在保存成功时 pop(true)
+    return result == true;
+  }
+
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
@@ -124,6 +210,16 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   // ── 第二步：选仓库并克隆 ────────────────────────────
 
   Future<void> _clone(GitHubRepo repo) async {
+    // 兜底：作者身份缺失时不允许继续。
+    //
+    // 正常流程里 `_loadRepos` 已经保证填过了，但用户可能：
+    //  - 用返回键从对话框退到别处再回来（PopScope 只挡返回键，
+    //    挡不住系统级退出）
+    //  - 中途清空了设置
+    // 一旦没有身份就去提交，结果就是 `noreply@localhost`，
+    // 用户完全看不出问题。所以这里再拦一次。
+    if (!await _ensureAuthorIdentityOrAsk()) return;
+
     if (repo.isEmpty) {
       _showError('${repo.fullName} 是空仓库，先给它加一个提交再接入');
       return;

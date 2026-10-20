@@ -67,6 +67,7 @@ class _AppShellState extends State<AppShell> {
           const ChatPage(),
           SitePage(
             controller: widget.siteController,
+            settingsController: widget.settingsController,
             visibleWhen: _tabIndex,
           ),
           SettingsPage(

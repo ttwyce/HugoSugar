@@ -22,6 +22,7 @@ class AuthorIdentityDialog extends StatefulWidget {
     super.key,
     required this.controller,
     this.suggestions,
+    this.required = false,
   });
 
   final SettingsController controller;
@@ -34,6 +35,19 @@ class AuthorIdentityDialog extends StatefulWidget {
   /// 未来完成时会自动刷新占位文案；用户可能早就填完保存了，
   /// 那种情况下这个值直接被丢弃，不会造成任何影响。
   final Future<AuthorSuggestion?>? suggestions;
+
+  /// 是否为「必须填写」模式。
+  ///
+  /// 首次用令牌登录时，如果自动获取账号资料失败，就没有任何可用的
+  /// 作者身份 —— 此时必须让用户填完才能继续，否则后续每次提交都会
+  /// 落到 `noreply@localhost` 这种不关联账号的身份上，而且用户
+  /// 完全不知道原因。
+  ///
+  /// 开启后：
+  /// - 隐藏「恢复自动」按钮（没有自动可用）
+  /// - 名和邮箱都必填
+  /// - 不允许通过返回键 / 点击遮罩关闭
+  final bool required;
 
   @override
   State<AuthorIdentityDialog> createState() => _AuthorIdentityDialogState();
@@ -74,16 +88,33 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
   }
 
   Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
+
+    // 必填模式下两个都要有，且邮箱格式要正确。
+    // 这里不用「留空则自动推断」那套，因为自动推断已经失败过了，
+    // 留空等于让用户带着一个不关联账号的身份去做提交。
+    if (widget.required) {
+      if (name.isEmpty) {
+        setState(() => _error = '请填写作者名');
+        return;
+      }
+      if (email.isEmpty) {
+        setState(() => _error = '请填写作者邮箱');
+        return;
+      }
+    }
+
     if (email.isNotEmpty && !_looksLikeEmail(email)) {
       setState(() => _error = '邮箱格式不对');
       return;
     }
+
     await widget.controller.setAuthorIdentity(
-      name: _nameCtrl.text,
+      name: name,
       email: email,
     );
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) Navigator.of(context).pop(true);
   }
 
   /// 宽松校验：只挡住明显错的东西，不做完整 RFC 校验。
@@ -105,12 +136,16 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
     // Material 的 hintText 只在「输入框为空 **且** 处于聚焦状态」时显示，
     // 而 labelText 在未聚焦时会浮在框内挡住它 —— 结果就是用户根本
     // 看不到建议值。helperText 则始终显示在输入框下方。
-    final nameHelper = (s?.name ?? '').isEmpty
-        ? '留空则用 GitHub 登录名'
-        : '留空则用 ${s!.name}';
-    final emailHelper = (s?.email ?? '').isEmpty
-        ? '留空则自动推断'
-        : '留空则用 ${s!.email}';
+    final nameHelper = widget.required
+        ? '必填'
+        : (s?.name ?? '').isEmpty
+            ? '留空则用 GitHub 登录名'
+            : '留空则用 ${s!.name}';
+    final emailHelper = widget.required
+        ? '必填，用于把提交关联到你的 GitHub 账号'
+        : (s?.email ?? '').isEmpty
+            ? '留空则自动推断'
+            : '留空则用 ${s!.email}';
 
     return Padding(
       padding: EdgeInsets.only(
@@ -172,24 +207,26 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
           const SizedBox(height: AppSpace.md),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () async {
-                    // 清空 = 恢复自动推断
-                    await widget.controller.setAuthorIdentity(
-                      name: '',
-                      email: '',
-                    );
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                  child: const Text('恢复自动'),
+              if (!widget.required) ...[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      // 清空 = 恢复自动推断
+                      await widget.controller.setAuthorIdentity(
+                        name: '',
+                        email: '',
+                      );
+                      if (context.mounted) Navigator.of(context).pop();
+                    },
+                    child: const Text('恢复自动'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpace.sm),
+                const SizedBox(width: AppSpace.sm),
+              ],
               Expanded(
                 child: FilledButton(
                   onPressed: _save,
-                  child: const Text('保存'),
+                  child: Text(widget.required ? '继续' : '保存'),
                 ),
               ),
             ],

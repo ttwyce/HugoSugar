@@ -4,6 +4,7 @@ import '../../app/theme/app_colors.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/git_service.dart';
 import '../../core/site/site_config.dart';
+import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import '../push/push_page.dart';
@@ -13,9 +14,18 @@ import 'connect_site_page.dart';
 ///
 /// 四种形态：未接入（引导）/ 克隆中（进度）/ 失败（报错+重试）/ 已就绪（信息卡）
 class SitePage extends StatefulWidget {
-  const SitePage({super.key, required this.controller, this.visibleWhen});
+  const SitePage({
+    super.key,
+    required this.controller,
+    required this.settingsController,
+    this.visibleWhen,
+  });
 
   final SiteController controller;
+
+  /// 传给接入页：首次登录时若拿不到账号资料，需要在这里读写
+  /// 「提交作者」身份。
+  final SettingsController settingsController;
 
   /// 当前选中的 Tab 序号。
   ///
@@ -77,7 +87,10 @@ class _SitePageState extends State<SitePage> {
   Future<void> _openConnect() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ConnectSitePage(controller: widget.controller),
+        builder: (_) => ConnectSitePage(
+          controller: widget.controller,
+          settingsController: widget.settingsController,
+        ),
       ),
     );
     if (mounted) {
