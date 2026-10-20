@@ -10,6 +10,8 @@ import '../site/site_controller.dart';
 import 'agent_runner.dart';
 import 'ai_client.dart';
 import 'ai_endpoint.dart';
+import 'cancel_token.dart';
+import 'context_compressor.dart';
 import 'chat_store.dart';
 import 'note_context.dart';
 import 'tools/ai_tool.dart';
@@ -61,6 +63,19 @@ class AiController extends ChangeNotifier {
 
   String? _lastError;
   String? get lastError => _lastError;
+
+  /// 当前请求的取消令牌（null = 没有进行中的请求）
+  CancelToken? _activeCancel;
+
+  /// 上下文压缩器
+  final _compressor = const ContextCompressor();
+
+  /// 上次发送时是否做了压缩，以及折叠了多少条
+  bool _lastCompressed = false;
+  int _lastDroppedCount = 0;
+
+  bool get lastCompressed => _lastCompressed;
+  int get lastDroppedCount => _lastDroppedCount;
 
   /// 本次对话的 AI 读取范围（想法页设置过就沿用）
   bool _readNotes = false;
@@ -256,6 +271,9 @@ class AiController extends ChangeNotifier {
       readNotes: _readNotes,
     );
 
+    final cancelToken = CancelToken();
+    _activeCancel = cancelToken;
+
     _busy = true;
     _streamingText = '';
     _lastError = null;
@@ -279,6 +297,15 @@ class AiController extends ChangeNotifier {
     await _chatStore?.save(withUser);
     notifyListeners();
 
+    // 压缩历史，避免长对话把上下文窗口撑爆。
+    //
+    // 放在 toApiMessages 之后、发请求之前：
+    // 早压缩没有意义（还不知道会不会超），晚压缩就来不及了。
+    final rawMessages = withUser.toApiMessages();
+    final compressed = _compressor.compress(rawMessages);
+    _lastCompressed = compressed.compressed;
+    _lastDroppedCount = compressed.droppedCount;
+
     final systemPrompt = _buildSystemPrompt();
     final tools = _buildTools();
     final runner = AgentRunner(
@@ -294,9 +321,10 @@ class AiController extends ChangeNotifier {
       final result = await runner.run(
         endpoint: ep,
         apiKey: key,
-        baseMessages: withUser.toApiMessages(),
+        baseMessages: compressed.messages,
         userText: text,
         systemPrompt: systemPrompt,
+        cancelToken: cancelToken,
         callbacks: AgentCallbacks(
           onTextDelta: (d) {
             streamed.write(d);
@@ -330,6 +358,9 @@ class AiController extends ChangeNotifier {
         toolCalls: toolRecords,
         promptTokens: result.promptTokens,
         completionTokens: result.completionTokens,
+        // 服务端给了 usage 才是真值，否则是估算。
+        // 界面必须能区分，不能把估算当账单展示。
+        usageIsExact: result.usageIsExact,
       );
 
       final s = _session!;
@@ -348,6 +379,14 @@ class AiController extends ChangeNotifier {
       if (result.aborted) {
         _lastError = '已中止';
       }
+    } on CancelledException {
+      // 用户主动取消：把已经收到的内容保留下来。
+      //
+      // 不写错误气泡 —— 取消是正常操作，不是失败。
+      // 但也不能什么都不留：用户可能已经看到一半有用内容，
+      // 刷新后消失会以为程序坏了。
+      await _commitPartial(streamed.toString(), toolRecords);
+      _lastError = null;
     } on AiException catch (e) {
       _lastError = e.toString();
       await _appendError(e.toString());
@@ -358,6 +397,7 @@ class AiController extends ChangeNotifier {
       _busy = false;
       _streamingText = null;
       _runningTool = null;
+      _activeCancel = null;
       _sessions = await _chatStore?.listAll() ?? const [];
       notifyListeners();
     }
@@ -365,14 +405,16 @@ class AiController extends ChangeNotifier {
 
   /// 中止当前请求。
   ///
-  /// 目前只做「标记」，正在进行的 HTTP 请求会自然跑完 ——
-  /// 真正的取消需要给 http 客户端加 CancelToken，属于后续优化。
-  /// 至少用户不会看到卡住的界面。
+  /// 通过 [CancelToken] 让流式循环在当前分片后退出，
+  /// 真正停止接收后续 token —— 不是只让 UI 不再等。
+  ///
+  /// 已收到的内容**保留**：用户点停止通常是因为
+  /// 「要的部分已经出来了」，把它丢掉才是意外行为。
+  /// 收尾由 [send] 的 finally 负责（那里会落盘）。
   void cancel() {
-    if (!_busy) return;
-    _busy = false;
-    _streamingText = null;
-    _runningTool = null;
+    final token = _activeCancel;
+    if (token == null || token.isCancelled) return;
+    token.cancel();
     _lastError = '已取消';
     notifyListeners();
   }
@@ -456,6 +498,32 @@ class AiController extends ChangeNotifier {
   }
 
   // ── 内部 ────────────────────────────────────────────
+
+  /// 把取消前收到的部分内容存进历史。
+  ///
+  /// 空内容（还没吐出任何 token）时什么都不写 ——
+  /// 造一条空白消息只会让人困惑。
+  Future<void> _commitPartial(
+    String text,
+    List<ToolCallRecord> toolCalls,
+  ) async {
+    if (text.trim().isEmpty && toolCalls.isEmpty) return;
+    final s = _session;
+    if (s == null) return;
+
+    final entry = ChatEntry(
+      role: 'assistant',
+      text: text.trim().isEmpty ? '（已取消）' : '$text\n\n_(已取消)_',
+      at: DateTime.now(),
+      toolCalls: toolCalls,
+    );
+    final updated = s.copyWith(
+      entries: [...s.entries, entry],
+      updatedAt: DateTime.now(),
+    );
+    _session = updated;
+    await _chatStore?.save(updated);
+  }
 
   Future<void> _appendError(String msg) async {
     final s = _session;

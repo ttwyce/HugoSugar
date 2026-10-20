@@ -400,7 +400,10 @@ class _EntryView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2, left: 2),
             child: Text(
-              '${e.promptTokens ?? 0} 入 / ${e.completionTokens ?? 0} 出 token',
+              // 服务端给了 usage 才是真值；没给是我们按字数估的。
+              // 必须标出来 —— 把估算值当精确统计展示是误导。
+              '${e.promptTokens ?? 0} 入 / ${e.completionTokens ?? 0} 出 token'
+              '${e.usageIsExact ? '' : '（估算）'}',
               style: TextStyle(fontSize: 10, color: c.textTertiary),
             ),
           ),
@@ -606,6 +609,13 @@ class _ContextBar extends StatelessWidget {
       label = sel.describe();
     }
 
+    // 上下文压缩提示。
+    //
+    // 用户需要知道「模型已经看不到最早那几轮了」——
+    // 否则会觉得「我明明说过，它怎么忘了」。
+    final compressed = controller.lastCompressed;
+    final dropped = controller.lastDroppedCount;
+
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -624,9 +634,21 @@ class _ContextBar extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11, color: c.textTertiary),
               ),
             ),
+            if (compressed) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.compress, size: 11, color: c.textTertiary),
+              const SizedBox(width: 3),
+              Text(
+                '已折叠 $dropped 条',
+                style: TextStyle(fontSize: 10, color: c.textTertiary),
+              ),
+            ],
+            const SizedBox(width: 6),
             Icon(Icons.tune, size: 12, color: c.textTertiary),
           ],
         ),

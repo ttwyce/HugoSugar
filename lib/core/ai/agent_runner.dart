@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'ai_client.dart';
 import 'ai_endpoint.dart';
+import 'cancel_token.dart';
 import 'ai_message.dart';
 import 'chat_store.dart';
 import 'tools/ai_tool.dart';
@@ -143,6 +144,7 @@ class AgentRunner {
     required AgentCallbacks callbacks,
     String systemPrompt = '',
     List<Map<String, dynamic>> extraTools = const [],
+    CancelToken? cancelToken,
   }) async {
     final messages = <AiMessage>[];
     if (systemPrompt.trim().isNotEmpty) {
@@ -166,6 +168,8 @@ class AgentRunner {
     var rounds = 0;
 
     while (true) {
+      cancelToken?.throwIfCancelled();
+
       if (rounds > 0) {
         // 累计 token 保护
         final sofar = totalPrompt + totalCompletion;
@@ -196,6 +200,7 @@ class AgentRunner {
         accumulator: acc,
         tools: toolSchemas,
         onDelta: callbacks.onTextDelta,
+        cancelToken: cancelToken,
       );
 
       // usage：服务端给了就是精确值
@@ -357,7 +362,10 @@ class AgentRunner {
           continue;
         }
 
-        // 只读工具：直接执行
+        // 只读工具：执行前再看一眼取消状态。
+        // fetch_url 最长 15 秒，用户在这期间点停止是合理操作。
+        cancelToken?.throwIfCancelled();
+
         ToolResult result;
         try {
           result = await tool.execute(args).timeout(

@@ -96,6 +96,7 @@ class ChatEntry {
     this.backups = const [],
     this.promptTokens,
     this.completionTokens,
+    this.usageIsExact = false,
     this.toolTokensEstimated = 0,
   });
 
@@ -114,6 +115,12 @@ class ChatEntry {
   final int? promptTokens;
   final int? completionTokens;
 
+  /// token 数是否来自服务端 usage。
+  ///
+  /// false 表示是按「字数 / 4」估出来的 —— 界面上必须标注，
+  /// 否则用户会把它当账单数字。
+  final bool usageIsExact;
+
   /// 工具结果注入后额外增加的 token（估算）
   final int toolTokensEstimated;
 
@@ -126,6 +133,7 @@ class ChatEntry {
     bool? isError,
     int? promptTokens,
     int? completionTokens,
+    bool? usageIsExact,
     int? toolTokensEstimated,
   }) {
     return ChatEntry(
@@ -137,6 +145,7 @@ class ChatEntry {
       backups: backups,
       promptTokens: promptTokens ?? this.promptTokens,
       completionTokens: completionTokens ?? this.completionTokens,
+      usageIsExact: usageIsExact ?? this.usageIsExact,
       toolTokensEstimated: toolTokensEstimated ?? this.toolTokensEstimated,
     );
   }
@@ -152,6 +161,7 @@ class ChatEntry {
           'backups': backups.map((b) => b.toJson()).toList(),
         if (promptTokens != null) 'promptTokens': promptTokens,
         if (completionTokens != null) 'completionTokens': completionTokens,
+        if (usageIsExact) 'usageIsExact': true,
         if (toolTokensEstimated > 0)
           'toolTokensEstimated': toolTokensEstimated,
       };
@@ -189,6 +199,7 @@ class ChatEntry {
       backups: backups,
       promptTokens: (j['promptTokens'] as num?)?.toInt(),
       completionTokens: (j['completionTokens'] as num?)?.toInt(),
+      usageIsExact: j['usageIsExact'] as bool? ?? false,
       toolTokensEstimated: (j['toolTokensEstimated'] as num?)?.toInt() ?? 0,
     );
   }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'ai_endpoint.dart';
+import 'cancel_token.dart';
 import 'ai_message.dart';
 import 'sse_parser.dart';
 
@@ -178,6 +179,7 @@ class AiClient {
     List<Map<String, dynamic>> tools = const [],
     void Function(String delta)? onDelta,
     Duration timeout = const Duration(seconds: 60),
+    CancelToken? cancelToken,
   }) async {
     if (endpoint.baseUrl.trim().isEmpty) {
       throw AiException(AiErrorKind.notConfigured, '还没有配置 AI 端点');
@@ -185,6 +187,9 @@ class AiClient {
     if (endpoint.model.trim().isEmpty) {
       throw AiException(AiErrorKind.notConfigured, '还没有选择模型');
     }
+
+    // 发请求前先看一眼：用户可能在按下发送的瞬间就点了停止
+    cancelToken?.throwIfCancelled();
 
     final body = <String, dynamic>{
       'model': endpoint.model,
@@ -226,6 +231,15 @@ class AiClient {
     try {
       await for (final chunk
           in res.stream.transform(utf8.decoder).timeout(timeout)) {
+        // 每个网络分片都检查一次取消。
+        // 放在这里而不是只在开头检查一次：模型输出可能持续几十秒，
+        // 只在开头查等于「点了停止还在收完整篇」。
+        if (cancelToken?.isCancelled ?? false) {
+          // 主动排空并关闭，让服务端尽快停止生成
+          unawaited(res.stream.drain<void>().catchError((_) {}));
+          throw const CancelledException();
+        }
+
         for (final payload in parser.push(chunk)) {
           if (payload == '[DONE]') {
             sawDone = true;
@@ -272,11 +286,18 @@ class AiClient {
           // 忽略
         }
       }
+    } on CancelledException {
+      // 取消不是错误，原样往上抛，别包成「读取响应失败」
+      rethrow;
     } on AiException {
       rethrow;
     } on TimeoutException {
       throw AiException(AiErrorKind.network, '流式响应超时中断');
     } catch (e) {
+      // 取消时底层可能抛 ClientException，这里再兜一次
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CancelledException();
+      }
       throw AiException(AiErrorKind.badStream, '读取响应失败：$e');
     }
 
