@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/settings/app_settings.dart';
+import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 
@@ -11,14 +13,25 @@ class SettingsPage extends StatelessWidget {
     required this.themeMode,
     required this.onThemeModeChanged,
     required this.siteController,
+    required this.settingsController,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final SiteController siteController;
+  final SettingsController settingsController;
 
   @override
   Widget build(BuildContext context) {
+    // 设置项变化后要立刻反映到这一页（副标题里的当前值），
+    // 所以用 AnimatedBuilder 监听控制器，而不是等父级重建。
+    return AnimatedBuilder(
+      animation: settingsController,
+      builder: (context, _) => _buildPage(context),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     final c = context.appColors;
     final sc = siteController;
     final cfg = sc.config;
@@ -28,6 +41,31 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
+          const SectionHeader('写作'),
+          ListTile(
+            leading: const Icon(Icons.event_outlined),
+            title: const Text('日期格式'),
+            subtitle: Text(
+              '${settingsController.dateFormat.label} · '
+              '${settingsController.dateFormat.sample}',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => _pickDateFormat(context),
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.insert_drive_file_outlined),
+            title: const Text('新建文件名'),
+            subtitle: Text(
+              '${settingsController.fileNameStyle.label}'
+              '${_fileNameHint(settingsController.fileNameStyle)}',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => _pickFileNameStyle(context),
+          ),
+
           const SectionHeader('外观'),
           _SegmentedThemeMode(
             value: themeMode,
@@ -98,6 +136,117 @@ class SettingsPage extends StatelessWidget {
           // 「开发者」分组下的 Git 冒烟测试页已在 M1 移除：
           // M0 验证通过，git 能力已沉淀到 core/site/git_service.dart。
         ],
+      ),
+    );
+  }
+
+  String _fileNameHint(FileNameStyle s) => switch (s) {
+        FileNameStyle.fromTitle => '（如 hello-world.md）',
+        FileNameStyle.timestamp => '（如 post-20240501-080309.md）',
+        FileNameStyle.dateAndTitle => '（如 20240501-hello-world.md）',
+      };
+
+  void _pickDateFormat(BuildContext context) {
+    _showChoiceSheet<DateFormatStyle>(
+      context: context,
+      title: '日期格式',
+      note: '写入 Front Matter 的 date 字段。Hugo 三种都能解析，'
+          '但如果主题或时间线功能要求严格 ISO8601，选带时区那种。',
+      values: DateFormatStyle.values,
+      current: settingsController.dateFormat,
+      labelOf: (v) => v.label,
+      sampleOf: (v) => v.sample,
+      onPick: (v) => settingsController.setDateFormat(v),
+    );
+  }
+
+  void _pickFileNameStyle(BuildContext context) {
+    _showChoiceSheet<FileNameStyle>(
+      context: context,
+      title: '新建文件名',
+      note: '只影响以后新建的文章，已存在的文件不会改名。'
+          '同名时自动加 -2、-3 后缀，绝不覆盖。',
+      values: FileNameStyle.values,
+      current: settingsController.fileNameStyle,
+      labelOf: (v) => v.label,
+      sampleOf: (v) => _fileNameHint(v),
+      onPick: (v) => settingsController.setFileNameStyle(v),
+    );
+  }
+
+  void _showChoiceSheet<T>({
+    required BuildContext context,
+    required String title,
+    required String note,
+    required List<T> values,
+    required T current,
+    required String Function(T) labelOf,
+    required String Function(T) sampleOf,
+    required ValueChanged<T> onPick,
+  }) {
+    final c = context.appColors;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                AppSpace.sm,
+                AppSpace.md,
+                4,
+              ),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                0,
+                AppSpace.md,
+                AppSpace.xs,
+              ),
+              child: Text(
+                note,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.55,
+                  color: c.textTertiary,
+                ),
+              ),
+            ),
+            for (final v in values)
+              ListTile(
+                title: Text(labelOf(v)),
+                subtitle: Text(
+                  sampleOf(v),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    fontFamily: 'monospace',
+                    color: c.textTertiary,
+                  ),
+                ),
+                trailing: v == current
+                    ? Icon(Icons.check, size: 18, color: c.accent)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onPick(v);
+                },
+              ),
+            const SizedBox(height: AppSpace.xs),
+          ],
+        ),
       ),
     );
   }

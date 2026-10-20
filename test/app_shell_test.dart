@@ -8,6 +8,7 @@ import 'package:hugosugar/app/theme/app_theme.dart';
 import 'package:hugosugar/app/shell.dart';
 import 'package:hugosugar/core/note/note_controller.dart';
 import 'package:hugosugar/core/note/note_store.dart';
+import 'package:hugosugar/core/settings/settings_controller.dart';
 import 'package:hugosugar/core/site/site_controller.dart';
 import 'package:path/path.dart' as p;
 
@@ -33,6 +34,7 @@ Widget _wrap({
       // 测试里不调 load()，控制器保持 empty 状态，不碰文件系统
       siteController: site,
       noteController: notes,
+      settingsController: SettingsController(),
     ),
   );
 }

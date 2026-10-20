@@ -256,11 +256,34 @@ abstract final class AppTheme {
         space: 1,
       ),
 
+      /// Chip 统一走「浅色底 + 深色字」，与筛选栏的 `_Chip` 视觉一致。
+      ///
+      /// 之前只设了 backgroundColor，没管 labelStyle 的颜色，
+      /// InputChip 会去取 ColorScheme 的次级容器色（深墨绿）配对默认前景色，
+      /// 结果就是「绿底白字」，在亮色主题下几乎看不清。
       chipTheme: ChipThemeData(
         backgroundColor: c.accentSoft,
-        labelStyle: const TextStyle(fontSize: 12, height: 1.2, fontWeight: FontWeight.w500),
+        // 明确指定前景色，不让 Material 去猜
+        labelStyle: TextStyle(
+          fontSize: 12,
+          height: 1.2,
+          fontWeight: FontWeight.w500,
+          color: c.accent,
+        ),
+        secondaryLabelStyle: TextStyle(
+          fontSize: 12,
+          height: 1.2,
+          color: c.accent,
+        ),
+        secondarySelectedColor: c.accentSoft,
+        selectedColor: c.accentSoft,
+        disabledColor: c.surface,
+        deleteIconColor: c.accent.withValues(alpha: 0.7),
         side: BorderSide.none,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs, vertical: 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.xs,
+          vertical: 2,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),

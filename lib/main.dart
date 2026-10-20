@@ -5,6 +5,8 @@ import 'app/theme/app_theme.dart';
 import 'app/shell.dart';
 import 'core/note/note_controller.dart';
 import 'core/note/note_store.dart';
+import 'core/settings/app_settings.dart';
+import 'core/settings/settings_controller.dart';
 import 'core/site/site_controller.dart';
 
 Future<void> main() async {
@@ -30,7 +32,8 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
 
   // 站点状态放这里，M1 只有一个站点，全局单例足够。
   // 以后上多站点再考虑换成 InheritedNotifier。
-  final _siteController = SiteController();
+  final _settingsController = SettingsController();
+  late final _siteController = SiteController(settings: _settingsController);
 
   /// 笔记库。异步打开，打开前 UI 显示空列表（而不是转圈），
   /// 因为本地文件读取通常 <50ms，值得用「直接可用」换掉闪一下的加载态。
@@ -41,7 +44,15 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
     super.initState();
     // 异步恢复上次接入的站点，不阻塞首帧
     _siteController.load();
+    _initSettings();
     _initNotes();
+  }
+
+  /// 偏好设置要在站点读取配置之前尽量就位，但它影响的是「写文件」，
+  /// 不阻塞首帧显示，所以和 load 并行就好。
+  Future<void> _initSettings() async {
+    final store = await SettingsStore.open();
+    await _settingsController.load(store: store);
   }
 
   Future<void> _initNotes() async {
@@ -59,6 +70,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   void dispose() {
     _noteController?.dispose();
     _siteController.dispose();
+    _settingsController.dispose();
     super.dispose();
   }
 
@@ -85,6 +97,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
               onThemeModeChanged: _onThemeModeChanged,
               siteController: _siteController,
               noteController: notes,
+              settingsController: _settingsController,
             ),
     );
   }

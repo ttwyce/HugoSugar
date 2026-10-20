@@ -496,6 +496,8 @@ class FrontMatterBuilder {
     String? description,
     String? slug,
     int? weight,
+    /// 日期写法：space / iso / dateOnly，见 [DateFormatStyle]
+    String dateFormat = 'space',
   }) {
     // 1) 以原始 Front Matter 为底。
     //
@@ -526,7 +528,7 @@ class FrontMatterBuilder {
     // 2) 按 Hugo 习惯的顺序写编辑器字段，保证 diff 稳定
     final ordered = <String, Object?>{};
     if (title.trim().isNotEmpty) ordered['title'] = title.trim();
-    if (date != null) ordered['date'] = _formatDate(date);
+    if (date != null) ordered['date'] = _formatDate(date, dateFormat);
     if (draft != null) ordered['draft'] = draft;
     if (categories != null && categories.isNotEmpty) {
       ordered['categories'] = categories;
@@ -571,6 +573,7 @@ class FrontMatterBuilder {
     String? slug,
     String body = '',
     String format = 'yaml',
+    String dateFormat = 'space',
   }) {
     return build(
       original: const {},
@@ -581,6 +584,7 @@ class FrontMatterBuilder {
       draft: draft,
       categories: categories,
       tags: tags,
+      dateFormat: dateFormat,
       description: description.isEmpty ? null : description,
       slug: slug,
     );
@@ -588,10 +592,47 @@ class FrontMatterBuilder {
 
   /// 日期统一写成 `2024-05-01T10:20:30+08:00` 会太长，
   /// 用 `2024-05-01 10:20:30` —— Hugo 两种都认，后者更好读。
-  static String _formatDate(DateTime d) {
+  ///
+  /// 但有的主题/工具链要求严格 ISO8601（带 T 和时区），
+  /// 所以格式做成可选，由设置决定。
+  static String _formatDate(DateTime d, [String style = 'space']) {
+    switch (style) {
+      case 'iso':
+        return formatIso8601(d);
+      case 'dateOnly':
+        return formatDateOnly(d);
+      default:
+        return formatSpace(d);
+    }
+  }
+
+  /// `2024-05-01 08:03:09`
+  static String formatSpace(DateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)} '
         '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  }
+
+  /// `2024-05-01T08:03:09+08:00`
+  ///
+  /// 手写而不是用 `DateTime.toIso8601String()`：后者对本地时间不带时区后缀，
+  /// 输出 `2024-05-01T08:03:09.000`，正好缺了 Hugo/主题最看重的那个 `+08:00`。
+  static String formatIso8601(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final offset = d.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final abs = offset.abs();
+    final oh = two(abs.inHours);
+    final om = two(abs.inMinutes.remainder(60));
+    return '${d.year}-${two(d.month)}-${two(d.day)}'
+        'T${two(d.hour)}:${two(d.minute)}:${two(d.second)}'
+        '$sign$oh:$om';
+  }
+
+  /// `2024-05-01`
+  static String formatDateOnly(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   // ── YAML 输出 ─────────────────────────────────────
