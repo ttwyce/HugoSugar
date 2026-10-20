@@ -859,16 +859,26 @@ class SiteController extends ChangeNotifier {
       // `/user/emails` 需要 `user:email` 授权，多数 classic token 没勾，
       // 拿不到就只能拼一个 `<id>+<login>@users.noreply.github.com`。
       // 而用户想要的往往是自己的真实邮箱 —— 只有他自己知道。
-      final profile = await _api.fetchProfile(pat);
-      final name = (settings?.authorName ?? '').isNotEmpty
-          ? settings!.authorName
-          : profile.commitName;
-      final email = (settings?.authorEmail ?? '').isNotEmpty
-          ? settings!.authorEmail
-          : profile.email;
+      //
+      // ## 关于网络失败（重要）
+      //
+      // 这里**绝不能**因为查不到账号资料就中止提交。
+      // 提交是完全本地的 git 操作，不需要网络；而这个查询只是
+      // 「补一个默认作者名」。早先的实现直接 `await fetchProfile`
+      // 并让异常打断整个流程，于是 TLS 一抖动就变成
+      // 「无法确认提交身份」，把一次本来能成功的本地提交卡死。
+      //
+      // 现在的策略：查不到就用本地已知信息兜底，继续提交。
+      final identity = await _resolveCommitIdentity(
+        pat: pat,
+        settings: settings,
+        step: step,
+      );
+      final name = identity.name;
+      final email = identity.email;
 
-      if (email.isEmpty) {
-        step('警告：拿不到邮箱，提交不会关联到 GitHub 账号');
+      if (!identity.hasRealEmail) {
+        step('警告：拿不到真实邮箱，提交不会关联到 GitHub 账号');
       }
       step('提交者：$name <$email>');
 
@@ -883,12 +893,6 @@ class SiteController extends ChangeNotifier {
         branch: cfg.branch,
       );
       step('已提交 $sha（${pending.length} 个文件）');
-    } on GitHubException catch (e) {
-      step('读取账号资料失败：${e.message}');
-      return PushOutcome.failure(
-        '无法确认提交身份：${e.message}',
-        log: log,
-      );
     } on GitOperationError catch (e) {
       step('提交失败：${e.rawMessage}');
       return PushOutcome.failure(_humanize(e), log: log);
@@ -920,6 +924,91 @@ class SiteController extends ChangeNotifier {
 
     return PushOutcome.success(commitSha: sha, log: log);
   }
+
+  /// 解析本次提交要用的作者名与邮箱。
+  ///
+  /// 这是**尽力而为**的操作，永远不会抛异常 —— 提交是纯本地 git 操作，
+  /// 不该因为一次查不到账号的 HTTPS 请求而失败。
+  ///
+  /// 取值优先级：
+  /// 1. 用户在设置里手填的值（最可信，且不需要网络）
+  /// 2. 本次会话已缓存的 [_login]
+  /// 3. 现查 GitHub `/user`（可能因网络失败）
+  /// 4. 站点配置里的仓库 owner（`https://github.com/owner/repo.git`）
+  /// 5. `user` / `user@localhost` 这种明显占位，保证 commit 能成
+  ///
+  /// 注意第 5 档：用占位值提交确实不会把这次提交关联到 GitHub 账号，
+  /// 但**能保证改动进入历史并推上去**。比起「什么都推不上去」，
+  /// 先推上去、之后用户可以改设置再补一次提交，是更好的结果。
+  Future<CommitIdentity> _resolveCommitIdentity({
+    required String pat,
+    required SettingsControllerLike? settings,
+    required void Function(String) step,
+  }) async {
+    final manualName = (settings?.authorName ?? '').trim();
+    final manualEmail = (settings?.authorEmail ?? '').trim();
+
+    // 手填的两个都有 → 完全不需要联网
+    if (manualName.isNotEmpty && manualEmail.isNotEmpty) {
+      return CommitIdentity(
+        name: manualName,
+        email: manualEmail,
+        hasRealEmail: true,
+      );
+    }
+
+    String? login = _login;
+    String? apiEmail;
+    try {
+      final profile = await _api.fetchProfile(pat);
+      login = profile.commitName;
+      apiEmail = profile.email;
+      _login = login; // 缓存，下次网络差也能用
+    } on GitHubException catch (e) {
+      // 这里只记录，不中断。用户会在日志里看到一行说明。
+      step('账号资料查询失败（${e.message}），改用本地信息继续提交');
+    } catch (e) {
+      step('账号资料查询失败（$e），改用本地信息继续提交');
+    }
+
+    final name = manualName.isNotEmpty
+        ? manualName
+        : (login != null && login.isNotEmpty)
+            ? login
+            : _fallbackOwner();
+
+    final email = manualEmail.isNotEmpty
+        ? manualEmail
+        : (apiEmail != null && apiEmail.isNotEmpty)
+            ? apiEmail
+            : _fallbackEmail();
+
+    return CommitIdentity(
+      name: name,
+      email: email,
+      hasRealEmail: manualEmail.isNotEmpty ||
+          (apiEmail != null && apiEmail.isNotEmpty),
+    );
+  }
+
+  /// 从仓库地址里取 owner 作为作者名兜底。
+  String _fallbackOwner() {
+    final slug = _config?.repoSlug ?? '';
+    final owner = slug.split('/').first.trim();
+    return owner.isEmpty ? 'user' : owner;
+  }
+
+  /// 兜底邮箱。
+  ///
+  /// 用 `@localhost` 而不是拼一个假装的 `@users.noreply.github.com`：
+  /// 后者看起来像真的 noreply 邮箱，但**格式不对**（真正的形式是
+  /// `<id>+<login>@users.noreply.github.com`，需要数字 id）。
+  /// 拼一个错的反而会让 GitHub 把它当成陌生邮箱，且更让人困惑。
+  ///
+  /// `@localhost` 是合法的邮箱格式，git 一定接受，也绝不会被误认为
+  /// 与任何账号关联 —— 语义清晰：这次提交没有绑定账号。
+  /// 用户在设置里填了真实邮箱后，之后的提交就会正确归属。
+  static String _fallbackEmail() => 'noreply@localhost';
 
   /// push 之后更新 lastSyncedAt 并落盘
   Future<void> _touchSynced() async {
@@ -1033,4 +1122,22 @@ class PushOutcome {
         log: log,
         needsPull: needsPull,
       );
+}
+
+/// 一次提交要用的作者身份。
+///
+/// [hasRealEmail] 用于决定要不要在日志里警告用户
+/// 「这次提交不会关联到你的 GitHub 账号」。
+class CommitIdentity {
+  const CommitIdentity({
+    required this.name,
+    required this.email,
+    required this.hasRealEmail,
+  });
+
+  final String name;
+  final String email;
+
+  /// 是否是真实邮箱（手填的，或从 GitHub API 拿到的）
+  final bool hasRealEmail;
 }
