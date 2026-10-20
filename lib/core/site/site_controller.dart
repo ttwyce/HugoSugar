@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 import '../fs/site_storage.dart';
 import '../post/front_matter.dart';
 import '../settings/app_settings.dart';
-import 'deploy_hook_service.dart';
+import 'commit_message.dart';
 import 'git_change.dart';
 import 'git_service.dart';
 import 'github_api.dart';
@@ -617,11 +617,13 @@ class SiteController extends ChangeNotifier {
 
   /// 生成默认 commit message
   String suggestCommitMessage() =>
-      DeployHookService.suggestCommitMessage(
+      CommitMessage.suggest(
         changes.map((e) => e.path).toList(),
       );
 
-  /// 执行一次完整推送：commit → push →（可选）触发 Deploy Hook。
+  /// 执行一次完整推送：commit → push。
+  ///
+  /// 只推 GitHub，不碰任何部署平台 —— 部署由平台监听仓库自行触发。
   ///
   /// [pat] 由调用方传入而不是这里读磁盘：token 存在
   /// flutter_secure_storage 里，属于 UI 层的职责，core 不碰密钥。
@@ -631,7 +633,6 @@ class SiteController extends ChangeNotifier {
   Future<PushOutcome> push({
     required String pat,
     required String commitMessage,
-    bool triggerDeployHook = true,
     void Function(String)? onStep,
   }) async {
     final root = repoPath;
@@ -681,7 +682,7 @@ class SiteController extends ChangeNotifier {
     try {
       step('提交中…');
       final msg = commitMessage.trim().isEmpty
-          ? DeployHookService.suggestCommitMessage(pending.map((e) => e.path).toList())
+          ? CommitMessage.suggest(pending.map((e) => e.path).toList())
           : commitMessage.trim();
       sha = GitService.commitAll(
         repoPath: root,
@@ -718,20 +719,7 @@ class SiteController extends ChangeNotifier {
     await _touchSynced();
     notifyListeners();
 
-    // 6) Deploy Hook
-    DeployResult? deploy;
-    final hook = cfg.deployHookUrl?.trim() ?? '';
-    if (triggerDeployHook && hook.isNotEmpty) {
-      step('触发部署…');
-      deploy = await DeployHookService.trigger(hook);
-      step(deploy.ok ? '部署已触发' : '部署触发失败：${deploy.message}');
-    }
-
-    return PushOutcome.success(
-      commitSha: sha,
-      log: log,
-      deploy: deploy,
-    );
+    return PushOutcome.success(commitSha: sha, log: log);
   }
 
   /// push 之后更新 lastSyncedAt 并落盘
@@ -746,36 +734,6 @@ class SiteController extends ChangeNotifier {
           .writeAsString(jsonEncode(updated.toJson()), flush: true);
     } catch (_) {
       // 时间戳写不进去不影响使用
-    }
-  }
-
-  /// 保存 Deploy Hook 地址
-  Future<bool> setDeployHook(String url) async {
-    final cfg = _config;
-    final storage = _storage;
-    if (cfg == null || storage == null) return false;
-
-    final trimmed = url.trim();
-    if (trimmed.isNotEmpty) {
-      final err = DeployHookService.validate(trimmed);
-      if (err != null) {
-        _error = err;
-        notifyListeners();
-        return false;
-      }
-    }
-
-    final updated = cfg.copyWith(deployHookUrl: trimmed);
-    _config = updated;
-    try {
-      await File(p.join(storage.root.path, _configFileName))
-          .writeAsString(jsonEncode(updated.toJson()), flush: true);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _error = '$e';
-      notifyListeners();
-      return false;
     }
   }
 
@@ -881,7 +839,6 @@ class PushOutcome {
     this.commitSha,
     this.log = const [],
     this.needsPull = false,
-    this.deploy,
   });
 
   final bool ok;
@@ -898,19 +855,14 @@ class PushOutcome {
   /// 是否因为「落后远端」而失败，UI 可据此提示「先拉取」
   final bool needsPull;
 
-  /// Deploy Hook 结果（未配置时为 null）
-  final DeployResult? deploy;
-
   static PushOutcome success({
     required String commitSha,
     List<String> log = const [],
-    DeployResult? deploy,
   }) =>
       PushOutcome._(
         ok: true,
         commitSha: commitSha,
         log: log,
-        deploy: deploy,
       );
 
   static PushOutcome failure(

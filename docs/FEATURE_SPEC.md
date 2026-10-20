@@ -415,7 +415,7 @@ dev_dependencies:
 | **M1** | 站点接入 | clone 仓库、识别 `content/posts`、站点信息卡、`SiteStorage` 抽象落地 | ✅ 已完成 |
 | **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 | ✅ 已完成 |
 | **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** | ✅ 已完成 |
-| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示、Deploy Hook | ✅ 已完成（待真机验证） |
+| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示 | ✅ 已完成（待真机验证） |
 | **M5** | AI Agent | 流式对话、6 工具、审批 Diff、撤销、置顶笔记注入、`fetch_url` | 待开始 |
 | **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 | 待开始 |
 

@@ -6,6 +6,7 @@ import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import '../editor/editor_page.dart';
 import '../push/push_page.dart';
+import '../../shared/chip_editor.dart';
 
 /// 文章列表的筛选维度
 enum _Filter { all, drafts, published }
@@ -784,8 +785,8 @@ class _NewPostSheetState extends State<_NewPostSheet> {
   final _catInputCtrl = TextEditingController();
   final _tagInputCtrl = TextEditingController();
 
-  final _categories = <String>[];
-  final _tags = <String>[];
+  List<String> _categories = <String>[];
+  List<String> _tags = <String>[];
   bool _draft = true;
 
   @override
@@ -814,24 +815,6 @@ class _NewPostSheetState extends State<_NewPostSheet> {
         draft: _draft,
       ),
     );
-  }
-
-  void _addFromInput(bool isCategory) {
-    final ctrl = isCategory ? _catInputCtrl : _tagInputCtrl;
-    final raw = ctrl.text.trim();
-    if (raw.isEmpty) return;
-    // 支持一次输入多个，用逗号或空格分隔
-    final parts = raw
-        .split(RegExp(r'[,，\s]+'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty);
-    setState(() {
-      for (final v in parts) {
-        final list = isCategory ? _categories : _tags;
-        if (!list.contains(v)) list.add(v);
-      }
-    });
-    ctrl.clear();
   }
 
   @override
@@ -889,30 +872,40 @@ class _NewPostSheetState extends State<_NewPostSheet> {
               const SizedBox(height: AppSpace.sm),
 
               // 分类
-              _ChipInput(
-                label: '分类',
-                selected: _categories,
-                inputCtrl: _catInputCtrl,
-                suggestions: widget.categories,
-                onAddInput: () => _addFromInput(true),
-                onRemove: (v) => setState(() => _categories.remove(v)),
-                onPick: (v) => setState(() {
-                  if (!_categories.contains(v)) _categories.add(v);
-                }),
+              Text(
+                '分类',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: c.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ChipEditor(
+                values: _categories,
+                allValues: widget.categories,
+                hint: '添加分类，回车确认（可逗号分隔）',
+                controller: _catInputCtrl,
+                onChanged: (v) => setState(() => _categories = v),
               ),
               const SizedBox(height: AppSpace.sm),
 
               // 标签
-              _ChipInput(
-                label: '标签',
-                selected: _tags,
-                inputCtrl: _tagInputCtrl,
-                suggestions: widget.tags,
-                onAddInput: () => _addFromInput(false),
-                onRemove: (v) => setState(() => _tags.remove(v)),
-                onPick: (v) => setState(() {
-                  if (!_tags.contains(v)) _tags.add(v);
-                }),
+              Text(
+                '标签',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: c.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ChipEditor(
+                values: _tags,
+                allValues: widget.tags,
+                hint: '添加标签，回车确认（可逗号分隔）',
+                controller: _tagInputCtrl,
+                onChanged: (v) => setState(() => _tags = v),
               ),
               const SizedBox(height: AppSpace.sm),
 
@@ -960,95 +953,6 @@ class _NewPostSheetState extends State<_NewPostSheet> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 可输入 + 可点选的标签输入区
-class _ChipInput extends StatelessWidget {
-  const _ChipInput({
-    required this.label,
-    required this.selected,
-    required this.inputCtrl,
-    required this.suggestions,
-    required this.onAddInput,
-    required this.onRemove,
-    required this.onPick,
-  });
-
-  final String label;
-  final List<String> selected;
-  final TextEditingController inputCtrl;
-  final List<String> suggestions;
-  final VoidCallback onAddInput;
-  final void Function(String) onRemove;
-  final void Function(String) onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.appColors;
-    // 过滤掉已选的，避免建议里出现重复项
-    final available =
-        suggestions.where((s) => !selected.contains(s)).take(8).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            height: 1.4,
-            color: c.textTertiary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        TextField(
-          controller: inputCtrl,
-          style: const TextStyle(fontSize: 14),
-          onSubmitted: (_) => onAddInput(),
-          decoration: InputDecoration(
-            hintText: '输入后回车添加，可用逗号分隔多个',
-            isDense: true,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.add, size: 18),
-              onPressed: onAddInput,
-              tooltip: '添加',
-            ),
-          ),
-        ),
-        if (selected.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final v in selected)
-                InputChip(
-                  label: Text(v, style: const TextStyle(fontSize: 12)),
-                  onDeleted: () => onRemove(v),
-                  deleteIcon: const Icon(Icons.close, size: 14),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-        ],
-        if (available.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final v in available)
-                ActionChip(
-                  label: Text(v, style: const TextStyle(fontSize: 12)),
-                  onPressed: () => onPick(v),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-        ],
-      ],
     );
   }
 }

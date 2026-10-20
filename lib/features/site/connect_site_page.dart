@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/site/github_api.dart';
 import '../../core/site/site_controller.dart';
+import '../../core/site/token_store.dart';
 import '../../shared/widgets.dart';
 
 /// 接入站点：两步 —— ① 填 token 拉仓库列表 ② 选一个仓库克隆。
@@ -24,6 +25,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   final _searchCtrl = TextEditingController();
 
   bool _obscure = true;
+
 
   /// 正在校验 token / 拉列表
   bool _loading = false;
@@ -47,11 +49,20 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   @override
   void initState() {
     super.initState();
-    // 已连接过：把上次地址带出来，方便重新克隆
-    final cfg = widget.controller.config;
-    if (cfg != null) {
-      _tokenCtrl.text = '';
-    }
+    // 从本地读取已保存的令牌 —— 站点页和推送页共用同一份，
+    // 用户填过一次就不该在另一个页面再填一次。
+    _loadSavedToken();
+  }
+
+  Future<void> _loadSavedToken() async {
+    final store = await TokenStore.open();
+    final saved = await store.read();
+    if (!mounted || saved == null) return;
+    setState(() {
+      _tokenCtrl.text = saved;
+    });
+    // 有令牌就直接拉列表，省掉一步手动点击
+    await _loadRepos();
   }
 
   @override
@@ -124,12 +135,20 @@ class _ConnectSitePageState extends State<ConnectSitePage>
 
     setState(() => _cloningFullName = repo.fullName);
 
+    final token = _tokenCtrl.text.trim();
     final ok = await widget.controller.connect(
       repoUrl: repo.cloneUrl,
-      pat: _tokenCtrl.text.trim(),
+      pat: token,
       displayName: repo.name,
       repo: repo,
     );
+
+    // 克隆成功说明这个令牌有效 —— 立刻存起来，
+    // 之后推送页直接复用，不再要求用户填第二次。
+    if (ok && token.isNotEmpty) {
+      final store = await TokenStore.open();
+      await store.write(token);
+    }
 
     if (!mounted) return;
     setState(() => _cloningFullName = null);

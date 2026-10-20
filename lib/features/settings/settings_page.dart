@@ -5,9 +5,10 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
+import 'token_dialog.dart';
 
 /// 设置页：标准 iOS 风格分组列表。
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({
     super.key,
     required this.themeMode,
@@ -22,18 +23,46 @@ class SettingsPage extends StatelessWidget {
   final SettingsController settingsController;
 
   @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  String _tokenHint = '未设置';
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshToken();
+  }
+
+  Future<void> _refreshToken() async {
+    final m = await loadTokenMask();
+    if (!mounted) return;
+    setState(() => _tokenHint = m.hasToken ? '已设置 ${m.masked}' : '未设置');
+  }
+
+  Future<void> _editToken(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const TokenDialog(),
+    );
+    await _refreshToken();
+  }
+
+  @override
   Widget build(BuildContext context) {
     // 设置项变化后要立刻反映到这一页（副标题里的当前值），
     // 所以用 AnimatedBuilder 监听控制器，而不是等父级重建。
     return AnimatedBuilder(
-      animation: settingsController,
+      animation: widget.settingsController,
       builder: (context, _) => _buildPage(context),
     );
   }
 
   Widget _buildPage(BuildContext context) {
     final c = context.appColors;
-    final sc = siteController;
+    final sc = widget.siteController;
     final cfg = sc.config;
 
     return Scaffold(
@@ -46,8 +75,8 @@ class SettingsPage extends StatelessWidget {
             leading: const Icon(Icons.event_outlined),
             title: const Text('日期格式'),
             subtitle: Text(
-              '${settingsController.dateFormat.label} · '
-              '${settingsController.dateFormat.sample}',
+              '${widget.settingsController.dateFormat.label} · '
+              '${widget.settingsController.dateFormat.sample}',
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -58,8 +87,8 @@ class SettingsPage extends StatelessWidget {
             leading: const Icon(Icons.insert_drive_file_outlined),
             title: const Text('新建文件名'),
             subtitle: Text(
-              '${settingsController.fileNameStyle.label}'
-              '${_fileNameHint(settingsController.fileNameStyle)}',
+              '${widget.settingsController.fileNameStyle.label}'
+              '${_fileNameHint(widget.settingsController.fileNameStyle)}',
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -68,8 +97,8 @@ class SettingsPage extends StatelessWidget {
 
           const SectionHeader('外观'),
           _SegmentedThemeMode(
-            value: themeMode,
-            onChanged: onThemeModeChanged,
+            value: widget.themeMode,
+            onChanged: widget.onThemeModeChanged,
           ),
           const IndentedDivider(),
           ListTile(
@@ -100,9 +129,12 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.key_outlined),
             title: const Text('GitHub 访问令牌'),
-            subtitle: const Text('在接入站点时填写'),
+            subtitle: Text(
+              _tokenHint,
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
             trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () {},
+            onTap: () => _editToken(context),
           ),
 
           const SectionHeader('AI'),
@@ -153,10 +185,10 @@ class SettingsPage extends StatelessWidget {
       note: '写入 Front Matter 的 date 字段。Hugo 三种都能解析，'
           '但如果主题或时间线功能要求严格 ISO8601，选带时区那种。',
       values: DateFormatStyle.values,
-      current: settingsController.dateFormat,
+      current: widget.settingsController.dateFormat,
       labelOf: (v) => v.label,
       sampleOf: (v) => v.sample,
-      onPick: (v) => settingsController.setDateFormat(v),
+      onPick: (v) => widget.settingsController.setDateFormat(v),
     );
   }
 
@@ -167,10 +199,10 @@ class SettingsPage extends StatelessWidget {
       note: '只影响以后新建的文章，已存在的文件不会改名。'
           '同名时自动加 -2、-3 后缀，绝不覆盖。',
       values: FileNameStyle.values,
-      current: settingsController.fileNameStyle,
+      current: widget.settingsController.fileNameStyle,
       labelOf: (v) => v.label,
       sampleOf: (v) => _fileNameHint(v),
-      onPick: (v) => settingsController.setFileNameStyle(v),
+      onPick: (v) => widget.settingsController.setFileNameStyle(v),
     );
   }
 

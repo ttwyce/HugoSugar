@@ -8,6 +8,7 @@ import '../../core/edit/undo_history.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
 import 'markdown_highlighter.dart';
+import '../../shared/chip_editor.dart';
 import 'markdown_toolbar.dart';
 
 /// 保存状态
@@ -1143,7 +1144,7 @@ class _MetaSheetState extends State<_MetaSheet> {
               const SizedBox(height: AppSpace.md),
               _label('分类', c),
               const SizedBox(height: 6),
-              _ChipsEditor(
+              ChipEditor(
                 values: _categories,
                 allValues: widget.allCategories,
                 hint: '添加分类，回车确认',
@@ -1154,7 +1155,7 @@ class _MetaSheetState extends State<_MetaSheet> {
               const SizedBox(height: AppSpace.md),
               _label('标签', c),
               const SizedBox(height: 6),
-              _ChipsEditor(
+              ChipEditor(
                 values: _tags,
                 allValues: widget.allTags,
                 hint: '添加标签，回车确认',
@@ -1276,117 +1277,5 @@ class _MetaSheetState extends State<_MetaSheet> {
     if (v.isEmpty) return;
     if (!target.contains(v)) assign([...target, v]);
     ctrl.clear();
-  }
-}
-
-/// 可增删的 chip 列表 + 输入框
-class _ChipsEditor extends StatelessWidget {
-  const _ChipsEditor({
-    required this.values,
-    required this.allValues,
-    required this.hint,
-    required this.controller,
-    required this.onChanged,
-  });
-
-  final List<String> values;
-  final List<String> allValues;
-  final String hint;
-  final TextEditingController controller;
-  final void Function(List<String>) onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.appColors;
-
-    // 站点里已有、但当前文章未使用的候选值
-    final suggestions =
-        allValues.where((v) => !values.contains(v)).take(8).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (values.isNotEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final v in values)
-                InputChip(
-                  label: Text(v, style: const TextStyle(fontSize: 12)),
-                  onDeleted: () =>
-                      onChanged(values.where((e) => e != v).toList()),
-                  deleteIcon: const Icon(Icons.close, size: 14),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-            ],
-          ),
-        if (values.isNotEmpty) const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          style: const TextStyle(fontSize: 13),
-          textInputAction: TextInputAction.done,
-          onSubmitted: (v) {
-            final t = v.trim();
-            if (t.isEmpty) return;
-            if (!values.contains(t)) onChanged([...values, t]);
-            controller.clear();
-          },
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
-            isDense: true,
-            filled: true,
-            fillColor: c.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.add, size: 18),
-              onPressed: () {
-                final t = controller.text.trim();
-                if (t.isEmpty) return;
-                if (!values.contains(t)) onChanged([...values, t]);
-                controller.clear();
-              },
-            ),
-          ),
-        ),
-        if (suggestions.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final v in suggestions)
-                GestureDetector(
-                  onTap: () => onChanged([...values, v]),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(color: c.divider),
-                    ),
-                    child: Text(
-                      '+ $v',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: c.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
   }
 }

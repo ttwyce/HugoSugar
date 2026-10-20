@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
-import '../../core/site/deploy_hook_service.dart';
+import '../../core/site/commit_message.dart';
 import '../../core/site/git_change.dart';
 import '../../core/site/site_controller.dart';
 import '../../core/site/token_store.dart';
@@ -25,7 +25,6 @@ class PushPage extends StatefulWidget {
 
 class _PushPageState extends State<PushPage> {
   final _msgCtrl = TextEditingController();
-  final _hookCtrl = TextEditingController();
   final _tokenCtrl = TextEditingController();
 
   List<GitChange> _changes = const [];
@@ -41,7 +40,6 @@ class _PushPageState extends State<PushPage> {
   @override
   void initState() {
     super.initState();
-    _hookCtrl.text = widget.controller.config?.deployHookUrl ?? '';
     _refresh();
     _loadToken();
   }
@@ -49,7 +47,6 @@ class _PushPageState extends State<PushPage> {
   @override
   void dispose() {
     _msgCtrl.dispose();
-    _hookCtrl.dispose();
     _tokenCtrl.dispose();
     super.dispose();
   }
@@ -75,7 +72,7 @@ class _PushPageState extends State<PushPage> {
       _loading = false;
       // 只在用户还没改过 message 时自动填
       if (_msgCtrl.text.trim().isEmpty) {
-        _msgCtrl.text = DeployHookService.suggestCommitMessage(
+        _msgCtrl.text = CommitMessage.suggest(
           changes.map((e) => e.path).toList(),
         );
       }
@@ -245,60 +242,6 @@ class _PushPageState extends State<PushPage> {
                   ),
                 ),
 
-                const SectionHeader('部署 Hook（可选）'),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpace.md,
-                    vertical: AppSpace.xs,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Vercel / Netlify 的 Deploy Hook 地址。推送成功后自动触发一次部署；'
-                        '留空则不触发（平台仍会自动监听仓库）。',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.6,
-                          color: c.textTertiary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _hookCtrl,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: 'https://api.vercel.com/v1/integrations/deploy/...',
-                          hintStyle: TextStyle(
-                            fontSize: 12,
-                            color: c.textTertiary,
-                          ),
-                          filled: true,
-                          fillColor: c.surface,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        onSubmitted: (_) => _saveHook(),
-                      ),
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _busy ? null : _saveHook,
-                          child: const Text('保存 Hook'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
                 if (_log.isNotEmpty) ...[
                   const SectionHeader('执行记录'),
                   Container(
@@ -459,21 +402,6 @@ class _PushPageState extends State<PushPage> {
     );
   }
 
-  Future<void> _saveHook() async {
-    final ok = await widget.controller.setDeployHook(_hookCtrl.text);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Deploy Hook 已保存'
-              : (widget.controller.error ?? '保存失败'),
-        ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
   Future<void> _push() async {
     // 决定用哪个 token：输入框优先，否则读已保存的
     var token = _tokenCtrl.text.trim();
@@ -546,26 +474,15 @@ class _PushPageState extends State<PushPage> {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             ),
             const SizedBox(height: 8),
-            if (outcome.deploy != null)
-              Text(
-                outcome.deploy!.ok
-                    ? '部署已触发，稍后可在平台查看构建进度。'
-                    : '部署触发失败：${outcome.deploy!.message}',
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: outcome.deploy!.ok ? c.textSecondary : c.danger,
-                ),
-              )
-            else
-              Text(
-                '未配置 Deploy Hook。平台监听仓库的话会自动开始构建。',
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: c.textSecondary,
-                ),
+            Text(
+              '已推送到 GitHub。如果你的站点由 Vercel 等平台托管，'
+              '平台会监听仓库自动开始构建，无需手动触发。',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: c.textSecondary,
               ),
+            ),
           ],
         ),
         actions: [
