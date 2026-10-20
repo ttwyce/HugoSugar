@@ -406,7 +406,13 @@ class GitService {
           parents: parents,
         );
 
-        final sha = oid.toString();
+        // 取短 SHA 用于展示。
+        //
+        // 必须用 `.sha` 而不是 `toString()`：git2dart 的 Oid 把
+        // toString() 重写成了 `Oid{sha: abc123...}`，直接插值会得到
+        // 那整串调试表示，看起来就像页面上莫名其妙多了个 Oid{...}。
+        // 短 SHA 用 .sha 截前 7 位，和 git log --oneline 的习惯一致。
+        final sha = oid.sha;
         return sha.length > 7 ? sha.substring(0, 7) : sha;
       } finally {
         index.free();
