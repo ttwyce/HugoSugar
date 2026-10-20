@@ -51,6 +51,7 @@ dependencies:
 
   # Front Matter 解析（YAML 格式）
   yaml: ^3.1.2
+  markdown: ^7.3.1
 
 dev_dependencies:
   flutter_test:

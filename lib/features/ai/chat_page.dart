@@ -6,6 +6,7 @@ import '../../core/ai/ai_controller.dart';
 import '../../core/ai/chat_store.dart';
 import 'ai_endpoints_page.dart';
 import 'write_approval_sheet.dart';
+import 'chat_markdown.dart';
 
 /// AI 对话页。
 ///
@@ -398,14 +399,16 @@ class _EntryView extends StatelessWidget {
                 : (e.isError ? c.danger.withValues(alpha: 0.08) : c.surface),
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          child: SelectableText(
-            e.text.isEmpty ? '…' : e.text,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.7,
-              color: e.isError ? c.danger : c.textPrimary,
-            ),
-          ),
+          child: e.isUser || e.isError
+              ? SelectableText(
+                  e.text.isEmpty ? '…' : e.text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.7,
+                    color: e.isError ? c.danger : c.textPrimary,
+                  ),
+                )
+              : ChatMarkdown(e.text.isEmpty ? '…' : e.text),
         ),
 
         // 工具调用：折叠成一行
