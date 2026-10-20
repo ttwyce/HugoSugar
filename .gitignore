@@ -1,0 +1,79 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android / Gradle —— 本机环境与构建缓存，不要入库
+# local.properties 记录本机 SDK/Flutter 绝对路径（/root/flutter、/root/Android），
+# 提交后别人 clone 会直接构建失败。
+/android/local.properties
+/android/.gradle/
+/android/.kotlin/
+/android/app/.cxx/
+/android/captures/
+**/gradle-app.setting
+**/build/
+!**/gradle/wrapper/gradle-wrapper.jar
+*.keystore
+*.jks
+/android/key.properties
+
+# 构建日志与本地工具产物
+*.log
+/analyze.log
+/build.log
+/test.log
+.backup/
+.operit/
+
+# Flutter 生成的平台文件 —— 文件头都写着 "do not check into version control"，
+# 内容是本机绝对路径（FLUTTER_ROOT=/root/flutter 等）。
+# .plugin_symlinks 是指向 pub-cache 的软链，提交后别人 clone 直接是坏链。
+**/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+macos/Flutter/Flutter-Generated.xcconfig
+macos/Flutter/Flutter-ephemeral.xcconfig
+macos/Flutter/ephemeral/
+**/*.g.dart.lock
+
