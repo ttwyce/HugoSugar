@@ -350,7 +350,7 @@ lib/
 │  ├─ note/              # CRUD / 分类 / 回收站 / 转文章
 │  ├─ editor/            # Markdown 编辑器 + 查找替换
 │  ├─ preview/           # md 本地渲染
-│  ├─ git/               # libgit2dart 封装 + PAT 认证 + Deploy Hook
+│  ├─ git/               # git2dart 封装 + PAT 认证 + Deploy Hook
 │  ├─ ai/
 │  │  ├─ engine/         # 流式对话 + tool 循环 + 取消
 │  │  ├─ tools/          # 6 个工具实现 + PathGuard
@@ -374,7 +374,12 @@ dependencies:
   path_provider: ^2.1.3
   path: ^1.9.0
   flutter_secure_storage: ^9.2.2
-  libgit2dart: ^0.7.1          # ★ 唯一需冒烟验证的
+  # ★ Git 绑定。注意是 git2dart，不是 libgit2dart。
+  #   libgit2dart 已 DISCONTINUED，且只支持 64 位 Linux/macOS/Windows，
+  #   Android/iOS 完全不可用，选错会卡死在第一步。
+  #   移动端必须在 runApp 之前 await PlatformSpecific.initialize()，
+  #   漏了会导致 .so 加载失败且报错信息不可读。
+  git2dart: ^0.5.6
   flutter_code_editor: ^0.3.2
   flutter_highlight: ^0.7.0
   flutter_markdown: ^0.7.2
@@ -396,18 +401,21 @@ dev_dependencies:
 
 ## 六、里程碑
 
-| # | 内容 | 验收标准 |
-|---|---|---|
-| **M0** | 骨架 + **git 冒烟** | 空壳可跑；**Android 跑通 clone → 改写 → push 到测试仓库** |
-| **M1** | 站点接入 | clone 仓库、识别 `content/posts`、站点信息卡、`SiteStorage` 抽象落地 |
-| **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 |
-| **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** |
-| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示、Deploy Hook |
-| **M5** | AI Agent | 流式对话、6 工具、审批 Diff、撤销、置顶笔记注入、`fetch_url` |
-| **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 |
+| # | 内容 | 验收标准 | 状态 |
+|---|---|---|---|
+| **M0** | 骨架 + **git 冒烟** | 空壳可跑；**Android 跑通 clone → 改写 → push 到测试仓库** | ✅ 已验证 |
+| **M1** | 站点接入 | clone 仓库、识别 `content/posts`、站点信息卡、`SiteStorage` 抽象落地 | ✅ 已完成 |
+| **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 | 进行中 |
+| **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** | 待开始 |
+| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示、Deploy Hook | 待开始 |
+| **M5** | AI Agent | 流式对话、6 工具、审批 Diff、撤销、置顶笔记注入、`fetch_url` | 待开始 |
+| **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 | 待开始 |
 
-> **M0 的 git 冒烟是硬门槛。** 跑不通就停下重新选型，不要往下堆 UI。
-> 备用方案：GitHub Contents API（纯 HTTP），代价是失去 clone 整仓与历史查看。
+> **M0 的 git 冒烟是硬门槛。** 已在真机验证通过：
+> `clone → 改写 → commit → push` 全链路跑通，`libgit2.so` 以 `arm64-v8a` 正确打包
+> （`file` 确认 ELF 64-bit LSB shared object, ARM aarch64）。
+> 若日后换库或换环境，这一步要重新验证。
+> 备用方案（未启用）：GitHub Contents API（纯 HTTP），代价是失去 clone 整仓与历史查看。
 
 ---
 
@@ -415,7 +423,8 @@ dev_dependencies:
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| `libgit2dart` 在 Android/iOS 链接失败 | 阻断 M4 | M0 先验证；备选 Contents API |
+| `git2dart` 在 Android/iOS 链接失败 | 阻断 M4 | **M0 已验证通过**（真机 clone→commit→push 全通）；备选 Contents API |
+| ARM64 上 NDK / ABI 配错导致构建失败 | 阻断一切 | NDK 钉死 28.2.13676358、ABI 仅 arm64-v8a 且从根项目注入，见 `docs/ARM64_BUILD_TROUBLESHOOTING.md` |
 | 大仓库 clone 慢 / 超时 | 体验差 | 只 clone `content/` 相关分支？否——改用 shallow clone `--depth 1` |
 | PAT 泄露 | 严重 | 存 `flutter_secure_storage`，不落日志，支持一键清除 |
 | `fetch_url` 被抓去访问内网 | 安全 | 私网黑名单 + 每跳重校验 |
@@ -443,11 +452,11 @@ dev_dependencies:
 
 ## 九、下一步
 
-**M0 具体交付**：
+**M0 具体交付**（已完成，调试页已按约定删除）：
 
 1. 5 Tab 空壳（文章 / 笔记 / AI / 站点 / 设置），能跑起来
 2. `core/fs/SiteStorage` 接口 + `AppPrivateStorage` 实现
-3. **一个「Git 冒烟测试」调试页**：输入仓库 URL + PAT → 点按钮 → 依次执行 `clone → 改一个文件 → commit → push` → 页面显示每步日志
-4. 跑通后删除该页面，进入 M1
+3. ~~「Git 冒烟测试」调试页~~：验证完毕后已删除，相关能力沉淀为 `core/site/git_service.dart`
+4. 进入 M1 ✅
 
 > 先跑通，再优雅。

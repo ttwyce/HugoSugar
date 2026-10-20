@@ -235,12 +235,13 @@ grep -E 'Built |FAILURE|rror:' build.log
 | `android/build.gradle.kts` | **NDK + ABI 全局钉死（铁律四/五）** |
 | `android/app/build.gradle.kts` | ndkVersion 固定 + abiFilters |
 | `docs/ARM64_BUILD_TROUBLESHOOTING.md` | **原生插件构建问题完整手册** |
-| `docs/FEATURE_SPEC.md` | 功能规格（⚠️ 依赖信息可能已过期，见下） |
+| `docs/FEATURE_SPEC.md` | 功能与需求方案（v4，依赖清单已校正） |
 | `docs/DESIGN_SPEC.md` | UI 设计规范 |
 
-> ⚠️ `docs/FEATURE_SPEC.md` 里的依赖清单曾写着 `libgit2dart: ^0.7.1`，
-> **该包已 DISCONTINUED 且不支持 Android/iOS**，实际用的是 `git2dart: ^0.5.6`。
-> 读该文档时以 `pubspec.yaml` 为准。
+> ⚠️ **依赖名易混，务必看清：是 `git2dart`，不是 `libgit2dart`。**
+> `libgit2dart` 已 DISCONTINUED，且只支持 64 位 Linux/macOS/Windows，
+> **Android/iOS 完全不可用**，选错会卡死在 M0 第一步。
+> 当前实际使用 `git2dart: ^0.5.6`，以 `pubspec.yaml` 为准。
 
 ---
 

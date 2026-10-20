@@ -58,6 +58,10 @@ SUPPORTED PLATFORMS: 64-bit Linux, MacOS, Windows
 
 正确选择是 `git2dart`（45 天前发布，明确支持 Android arm64-v8a / x86_64、iOS via CocoaPods）。
 
+> **顺带修掉一个连带错误**：原文档的依赖清单写的是 `libgit2dart: ^0.7.1`，
+> 但该包最新发布版本是 **1.2.2**，`^0.7.1` 这个约束在 pub 上根本解析不到。
+> 也就是说这条依赖不只是「选错库」，就算想装也装不上——两处错误叠在一起。
+
 **通用规则：引入任何 New Package 之前，先看 pub.dev 页面顶部的三个标记**
 
 | 标记 | 怎么看 | 危险信号 |
