@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
+import '../../core/site/github_api.dart';
 import '../../core/site/site_controller.dart';
+import '../../core/site/token_store.dart';
 import '../../shared/widgets.dart';
+import 'author_identity_dialog.dart';
 import 'token_dialog.dart';
 
 /// 设置页：标准 iOS 风格分组列表。
@@ -48,6 +51,53 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (_) => const TokenDialog(),
     );
     await _refreshToken();
+  }
+
+  /// 「提交作者」副标题：显示实际会写进 commit 的值
+  String _authorHint() {
+    final sc = widget.settingsController;
+    final name = sc.authorName;
+    final email = sc.authorEmail;
+    if (name.isEmpty && email.isEmpty) return '自动（跟随 GitHub 账号）';
+    if (email.isEmpty) return '$name · 邮箱自动推断';
+    return '${name.isEmpty ? "名称自动" : name} · $email';
+  }
+
+  Future<void> _editAuthor() async {
+    // 用令牌试着拿一下登录名/邮箱，只作为输入框的占位提示；
+    // 拿不到也不影响手填。
+    String? suggestedName;
+    String? suggestedEmail;
+    try {
+      final store = await TokenStore.open();
+      final token = await store.read();
+      if (token != null && token.isNotEmpty) {
+        final api = GitHubApi();
+        try {
+          final p = await api.fetchProfile(token);
+          suggestedName = p.commitName;
+          suggestedEmail = p.email.isEmpty ? null : p.email;
+        } finally {
+          api.dispose();
+        }
+      }
+    } catch (_) {
+      // 网络/权限问题都忽略，纯提示用途
+    }
+    // 网络请求期间用户可能已经离开设置页，这里必须查 State 的 mounted，
+    // 而不是外层传进来的 context（它可能已经失效）。
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context, // State.context，已过 mounted 检查
+      isScrollControlled: true,
+      builder: (_) => AuthorIdentityDialog(
+        controller: widget.settingsController,
+        suggestedName: suggestedName,
+        suggestedEmail: suggestedEmail,
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   @override
@@ -135,6 +185,17 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: () => _editToken(context),
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.badge_outlined),
+            title: const Text('提交作者'),
+            subtitle: Text(
+              _authorHint(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _editAuthor,
           ),
 
           const SectionHeader('AI'),

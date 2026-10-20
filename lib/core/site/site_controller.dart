@@ -710,14 +710,24 @@ class SiteController extends ChangeNotifier {
     try {
       step('提交中…');
 
-      // 提交作者必须来自令牌对应的真实账号。
-      // 早先这里没传，落到 commitAll 的默认值上，于是所有提交都记在
-      // `HugoSugar` 名下 —— 用户在 GitHub 上看到的作者不是自己。
+      // 提交作者优先用用户在设置里填的身份，没填才回落到令牌对应的账号。
+      //
+      // 为什么允许手填：自动推断只能拿到 GitHub 公开邮箱或 noreply 地址。
+      // `/user/emails` 需要 `user:email` 授权，多数 classic token 没勾，
+      // 拿不到就只能拼一个 `<id>+<login>@users.noreply.github.com`。
+      // 而用户想要的往往是自己的真实邮箱 —— 只有他自己知道。
       final profile = await _api.fetchProfile(pat);
-      if (profile.email.isEmpty) {
-        step('警告：拿不到账号邮箱，提交可能不会关联到你的 GitHub 主页');
+      final name = (settings?.authorName ?? '').isNotEmpty
+          ? settings!.authorName
+          : profile.commitName;
+      final email = (settings?.authorEmail ?? '').isNotEmpty
+          ? settings!.authorEmail
+          : profile.email;
+
+      if (email.isEmpty) {
+        step('警告：拿不到邮箱，提交不会关联到 GitHub 账号');
       }
-      step('提交者：${profile.commitName} <${profile.email}>');
+      step('提交者：$name <$email>');
 
       final msg = commitMessage.trim().isEmpty
           ? CommitMessage.suggest(pending.map((e) => e.path).toList())
@@ -725,8 +735,8 @@ class SiteController extends ChangeNotifier {
       sha = GitService.commitAll(
         repoPath: root,
         message: msg,
-        authorName: profile.commitName,
-        authorEmail: profile.email,
+        authorName: name,
+        authorEmail: email,
         branch: cfg.branch,
       );
       step('已提交 $sha（${pending.length} 个文件）');

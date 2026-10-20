@@ -66,29 +66,52 @@ class AppSettings {
   const AppSettings({
     this.dateFormat = DateFormatStyle.iso,
     this.fileNameStyle = FileNameStyle.fromTitle,
+    this.authorName = '',
+    this.authorEmail = '',
   });
 
   final DateFormatStyle dateFormat;
   final FileNameStyle fileNameStyle;
 
+  /// git 提交作者名。空串表示「用令牌对应的 GitHub 登录名」。
+  ///
+  /// 留空是合理默认：多数人希望提交显示为自己的 GitHub 账号。
+  final String authorName;
+
+  /// git 提交作者邮箱。空串表示「自动推断」。
+  ///
+  /// **为什么需要手填**：自动推断只能拿到 GitHub 的公开邮箱或
+  /// noreply 地址，而用户很可能希望提交指向自己的真实邮箱
+  /// （比如 3238084478@qq.com）。GitHub 靠邮箱把提交关联到账号，
+  /// 所以这个值填错会导致贡献格子不亮，必须允许用户自己定。
+  final String authorEmail;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
+    String? authorName,
+    String? authorEmail,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
       fileNameStyle: fileNameStyle ?? this.fileNameStyle,
+      authorName: authorName ?? this.authorName,
+      authorEmail: authorEmail ?? this.authorEmail,
     );
   }
 
   Map<String, Object?> toJson() => {
         'dateFormat': dateFormat.id,
         'fileNameStyle': fileNameStyle.id,
+        'authorName': authorName,
+        'authorEmail': authorEmail,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
         dateFormat: DateFormatStyle.fromId(j['dateFormat'] as String?),
         fileNameStyle: FileNameStyle.fromId(j['fileNameStyle'] as String?),
+        authorName: j['authorName'] as String? ?? '',
+        authorEmail: j['authorEmail'] as String? ?? '',
       );
 }
 
@@ -99,6 +122,8 @@ class AppSettings {
 abstract class SettingsControllerLike {
   DateFormatStyle get dateFormat;
   FileNameStyle get fileNameStyle;
+  String get authorName;
+  String get authorEmail;
 }
 
 /// 读写 `settings.json`。

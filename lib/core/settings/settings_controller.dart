@@ -20,6 +20,12 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   @override
   FileNameStyle get fileNameStyle => _value.fileNameStyle;
 
+  @override
+  String get authorName => _value.authorName;
+
+  @override
+  String get authorEmail => _value.authorEmail;
+
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
     if (store != null) _store = store;
@@ -38,6 +44,19 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   Future<void> setFileNameStyle(FileNameStyle v) async {
     if (_value.fileNameStyle == v) return;
     _value = _value.copyWith(fileNameStyle: v);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 设置提交作者名与邮箱。传空串表示恢复「自动推断」。
+  Future<void> setAuthorIdentity({
+    required String name,
+    required String email,
+  }) async {
+    final n = name.trim();
+    final e = email.trim();
+    if (_value.authorName == n && _value.authorEmail == e) return;
+    _value = _value.copyWith(authorName: n, authorEmail: e);
     notifyListeners();
     await _store?.save(_value);
   }
