@@ -276,12 +276,20 @@ String? validatePostPath(Site site, String relPath) {
 
 ```
 <App私有目录>/
-├─ hugosugar.db          # drift 数据库（站点、笔记元数据）
+├─ notes/notes.json      # 笔记库（M3 实装为 JSON，见下方说明）
+├─ site.json             # 站点配置
 └─ sites/
    └─ <siteId>/          # 一个 Hugo 仓库
       ├─ .git/
       └─ content/posts/*.md
 ```
+
+> **M3 实施偏差（记录备查）**：原方案写 drift，实际改为 JSON 文件。
+> 理由：drift 需要 sqlite3 native + build_runner codegen，在本项目的
+> ARM64 + proot 构建链上多两个风险点；而笔记是个人灵感库，量级几百到
+> 几千条，Dart 的内存过滤完全够用。落地版本见
+> `lib/core/note/note_store.dart`，接口已收在 `NoteStore` 内，
+> 将来要换 drift 不影响 UI 层。写入采用「写 tmp → rename」保证原子性。
 
 **抽象层纪律**：业务层只能用 `SiteStorage` 接口，**不许直接 `File()` 或 `path_provider`**。漏一个出来，将来接 SAF 就崩。
 
@@ -405,8 +413,8 @@ dev_dependencies:
 |---|---|---|---|
 | **M0** | 骨架 + **git 冒烟** | 空壳可跑；**Android 跑通 clone → 改写 → push 到测试仓库** | ✅ 已验证 |
 | **M1** | 站点接入 | clone 仓库、识别 `content/posts`、站点信息卡、`SiteStorage` 抽象落地 | ✅ 已完成 |
-| **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 | 进行中 |
-| **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** | 待开始 |
+| **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 | ✅ 已完成 |
+| **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** | ✅ 已完成 |
 | **M4** | Git 推送 | 变更列表、commit message、push、冲突提示、Deploy Hook | 待开始 |
 | **M5** | AI Agent | 流式对话、6 工具、审批 Diff、撤销、置顶笔记注入、`fetch_url` | 待开始 |
 | **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 | 待开始 |

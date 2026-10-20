@@ -101,7 +101,7 @@ class _PostsPageState extends State<PostsPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: sc.stage == SiteStage.ready ? () {} : null,
+        onPressed: sc.stage == SiteStage.ready ? () => _newPost(sc) : null,
         tooltip: '新建文章',
         child: const Icon(Icons.add),
       ),
@@ -219,6 +219,53 @@ class _PostsPageState extends State<PostsPage> {
           title: post.title,
           relativePath: post.relativePath,
           controller: widget.siteController,
+        ),
+      ),
+    );
+  }
+
+  /// 新建文章：先填标题和元信息，再写入文件。
+  ///
+  /// 为什么不直接建空文件让用户进去改标题：Hugo 的 title 是 Front Matter
+  /// 里的字段，不是文件名。先收集信息再落盘，能保证文件名和 title 一致，
+  /// 避免「文件名 abc.md 但标题是《你好》」这种混乱。
+  Future<void> _newPost(SiteController sc) async {
+    final existingCats = sc.allCategories;
+    final existingTags = sc.allTags;
+
+    final result = await showModalBottomSheet<_NewPostResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _NewPostSheet(
+        categories: existingCats,
+        tags: existingTags,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final path = await sc.createPost(
+      title: result.title,
+      categories: result.categories,
+      tags: result.tags,
+      description: result.description,
+      draft: result.draft,
+    );
+
+    if (!mounted) return;
+    if (path == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(sc.error ?? '创建失败')),
+      );
+      return;
+    }
+
+    // 直接进编辑器
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditorPage(
+          title: result.title,
+          relativePath: path,
+          controller: sc,
         ),
       ),
     );
@@ -544,6 +591,312 @@ class _PostRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── 新建文章表单 ───────────────────────────────────────
+
+class _NewPostResult {
+  const _NewPostResult({
+    required this.title,
+    required this.categories,
+    required this.tags,
+    required this.description,
+    required this.draft,
+  });
+
+  final String title;
+  final List<String> categories;
+  final List<String> tags;
+  final String description;
+  final bool draft;
+}
+
+class _NewPostSheet extends StatefulWidget {
+  const _NewPostSheet({required this.categories, required this.tags});
+
+  /// 站点里已有的分类，用于快捷选择
+  final List<String> categories;
+
+  /// 站点里已有的标签
+  final List<String> tags;
+
+  @override
+  State<_NewPostSheet> createState() => _NewPostSheetState();
+}
+
+class _NewPostSheetState extends State<_NewPostSheet> {
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _catInputCtrl = TextEditingController();
+  final _tagInputCtrl = TextEditingController();
+
+  final _categories = <String>[];
+  final _tags = <String>[];
+  bool _draft = true;
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _catInputCtrl.dispose();
+    _tagInputCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final title = _titleCtrl.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请填写标题')),
+      );
+      return;
+    }
+    Navigator.of(context).pop(
+      _NewPostResult(
+        title: title,
+        categories: List.of(_categories),
+        tags: List.of(_tags),
+        description: _descCtrl.text.trim(),
+        draft: _draft,
+      ),
+    );
+  }
+
+  void _addFromInput(bool isCategory) {
+    final ctrl = isCategory ? _catInputCtrl : _tagInputCtrl;
+    final raw = ctrl.text.trim();
+    if (raw.isEmpty) return;
+    // 支持一次输入多个，用逗号或空格分隔
+    final parts = raw
+        .split(RegExp(r'[,，\s]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    setState(() {
+      for (final v in parts) {
+        final list = isCategory ? _categories : _tags;
+        if (!list.contains(v)) list.add(v);
+      }
+    });
+    ctrl.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.md,
+            AppSpace.xs,
+            AppSpace.md,
+            AppSpace.md,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '新建文章',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
+              ),
+              const SizedBox(height: AppSpace.md),
+
+              // 标题
+              TextField(
+                controller: _titleCtrl,
+                autofocus: true,
+                style: const TextStyle(fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: '标题',
+                  isDense: true,
+                ),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: AppSpace.sm),
+
+              // 简介
+              TextField(
+                controller: _descCtrl,
+                style: const TextStyle(fontSize: 14),
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: '简介（可选，会写进 description）',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: AppSpace.sm),
+
+              // 分类
+              _ChipInput(
+                label: '分类',
+                selected: _categories,
+                inputCtrl: _catInputCtrl,
+                suggestions: widget.categories,
+                onAddInput: () => _addFromInput(true),
+                onRemove: (v) => setState(() => _categories.remove(v)),
+                onPick: (v) => setState(() {
+                  if (!_categories.contains(v)) _categories.add(v);
+                }),
+              ),
+              const SizedBox(height: AppSpace.sm),
+
+              // 标签
+              _ChipInput(
+                label: '标签',
+                selected: _tags,
+                inputCtrl: _tagInputCtrl,
+                suggestions: widget.tags,
+                onAddInput: () => _addFromInput(false),
+                onRemove: (v) => setState(() => _tags.remove(v)),
+                onPick: (v) => setState(() {
+                  if (!_tags.contains(v)) _tags.add(v);
+                }),
+              ),
+              const SizedBox(height: AppSpace.sm),
+
+              // 草稿开关
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '保存为草稿',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '草稿不会出现在站点上，可在编辑器里随时转为发布',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.5,
+                            color: c.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _draft,
+                    onChanged: (v) => setState(() => _draft = v),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpace.md),
+
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _submit,
+                  child: const Text('创建并开始写'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 可输入 + 可点选的标签输入区
+class _ChipInput extends StatelessWidget {
+  const _ChipInput({
+    required this.label,
+    required this.selected,
+    required this.inputCtrl,
+    required this.suggestions,
+    required this.onAddInput,
+    required this.onRemove,
+    required this.onPick,
+  });
+
+  final String label;
+  final List<String> selected;
+  final TextEditingController inputCtrl;
+  final List<String> suggestions;
+  final VoidCallback onAddInput;
+  final void Function(String) onRemove;
+  final void Function(String) onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    // 过滤掉已选的，避免建议里出现重复项
+    final available =
+        suggestions.where((s) => !selected.contains(s)).take(8).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: c.textTertiary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: inputCtrl,
+          style: const TextStyle(fontSize: 14),
+          onSubmitted: (_) => onAddInput(),
+          decoration: InputDecoration(
+            hintText: '输入后回车添加，可用逗号分隔多个',
+            isDense: true,
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.add, size: 18),
+              onPressed: onAddInput,
+              tooltip: '添加',
+            ),
+          ),
+        ),
+        if (selected.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final v in selected)
+                InputChip(
+                  label: Text(v, style: const TextStyle(fontSize: 12)),
+                  onDeleted: () => onRemove(v),
+                  deleteIcon: const Icon(Icons.close, size: 14),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+        if (available.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final v in available)
+                ActionChip(
+                  label: Text(v, style: const TextStyle(fontSize: 12)),
+                  onPressed: () => onPick(v),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

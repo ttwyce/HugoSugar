@@ -3,6 +3,8 @@ import 'package:git2dart/git2dart.dart';
 
 import 'app/theme/app_theme.dart';
 import 'app/shell.dart';
+import 'core/note/note_controller.dart';
+import 'core/note/note_store.dart';
 import 'core/site/site_controller.dart';
 
 Future<void> main() async {
@@ -30,15 +32,32 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   // 以后上多站点再考虑换成 InheritedNotifier。
   final _siteController = SiteController();
 
+  /// 笔记库。异步打开，打开前 UI 显示空列表（而不是转圈），
+  /// 因为本地文件读取通常 <50ms，值得用「直接可用」换掉闪一下的加载态。
+  NoteController? _noteController;
+
   @override
   void initState() {
     super.initState();
     // 异步恢复上次接入的站点，不阻塞首帧
     _siteController.load();
+    _initNotes();
+  }
+
+  Future<void> _initNotes() async {
+    final store = await NoteStore.open();
+    if (!mounted) return;
+    setState(() {
+      _noteController = NoteController(
+        store: store,
+        site: _siteController,
+      );
+    });
   }
 
   @override
   void dispose() {
+    _noteController?.dispose();
     _siteController.dispose();
     super.dispose();
   }
@@ -49,17 +68,24 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
 
   @override
   Widget build(BuildContext context) {
+    final notes = _noteController;
+
     return MaterialApp(
       title: 'HugoSugar',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: _themeMode,
-      home: AppShell(
-        themeMode: _themeMode,
-        onThemeModeChanged: _onThemeModeChanged,
-        siteController: _siteController,
-      ),
+      home: notes == null
+          // 笔记库打开前的极短占位。用空白而不是转圈，
+          // 避免一闪而过的加载动画更刺眼。
+          ? Scaffold(backgroundColor: Theme.of(context).scaffoldBackgroundColor)
+          : AppShell(
+              themeMode: _themeMode,
+              onThemeModeChanged: _onThemeModeChanged,
+              siteController: _siteController,
+              noteController: notes,
+            ),
     );
   }
 }

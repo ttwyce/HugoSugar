@@ -103,6 +103,27 @@ class PostDocument {
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}-$m-$day';
   }
+
+  /// 生成可写回文件的完整内容。
+  ///
+  /// 关键点：**保留 [frontMatter] 里我们没改过的键**。
+  /// Hugo 站点的 Front Matter 常有 `author` / `series` / `aliases` /
+  /// `cover` 这类字段，编辑器不认识但不能丢，否则一保存就毁用户配置。
+  String serialize({String? title, String body = ''}) {
+    return FrontMatterBuilder.build(
+      original: frontMatter,
+      format: format,
+      title: title ?? this.title,
+      date: date,
+      draft: draft,
+      categories: categories,
+      tags: tags,
+      description: description.isEmpty ? null : description,
+      slug: slug,
+      weight: weight,
+      body: body,
+    );
+  }
 }
 
 /// Front Matter 解析器。
@@ -423,5 +444,212 @@ class FrontMatter {
       );
     }
     return null;
+  }
+}
+
+/// Front Matter 序列化。
+///
+/// 与 [FrontMatter] 解析器配对。核心约束：
+///
+/// **绝不丢弃我们没认识的键。**
+/// Hugo 站点常见 `author` / `series` / `aliases` / `cover` / `lastmod`，
+/// 编辑器不展示它们，但用户写了就是有用。保存时必须原样写回，
+/// 否则一次编辑就毁掉站点配置。
+///
+/// 实现方式是「先合并再输出」：以原始 map 为底，把编辑器管理的键覆盖上去。
+class FrontMatterBuilder {
+  FrontMatterBuilder._();
+
+  /// 这些键由编辑器接管，序列化时以传入值为准
+  static const _managedKeys = {
+    'title',
+    'date',
+    'draft',
+    'categories',
+    'category',
+    'tags',
+    'tag',
+    'description',
+    'summary',
+    'slug',
+    'weight',
+    // 解析时可能读到的别名，写回时统一成规范键，避免同时存在两份
+    'publishDate',
+    'pubDate',
+  };
+
+  /// 拼出完整文件内容
+  static String build({
+    required Map<String, Object?> original,
+    required String format,
+    required String title,
+    required String body,
+    DateTime? date,
+    bool? draft,
+    List<String>? categories,
+    List<String>? tags,
+    String? description,
+    String? slug,
+    int? weight,
+  }) {
+    // 1) 以原始 Front Matter 为底，剔除被接管的键
+    final merged = <String, Object?>{};
+    original.forEach((k, v) {
+      if (_managedKeys.contains(k)) return;
+      merged[k] = v;
+    });
+
+    // 2) 按 Hugo 习惯的顺序写编辑器字段，保证 diff 稳定
+    final ordered = <String, Object?>{};
+    if (title.trim().isNotEmpty) ordered['title'] = title.trim();
+    if (date != null) ordered['date'] = _formatDate(date);
+    if (draft != null) ordered['draft'] = draft;
+    if (categories != null && categories.isNotEmpty) {
+      ordered['categories'] = categories;
+    }
+    if (tags != null && tags.isNotEmpty) ordered['tags'] = tags;
+    if (description != null && description.trim().isNotEmpty) {
+      ordered['description'] = description.trim();
+    }
+    if (slug != null && slug.trim().isNotEmpty) ordered['slug'] = slug.trim();
+    if (weight != null) ordered['weight'] = weight;
+
+    // 3) 追加保留字段
+    ordered.addAll(merged);
+
+    final fmText = format == 'toml' ? _toToml(ordered) : _toYaml(ordered);
+    final delim = format == 'toml' ? '+++' : '---';
+
+    // 4) 组装。format == 'none' 且没有任何字段时，不写空 Front Matter
+    if (format == 'none' && ordered.isEmpty) {
+      return body;
+    }
+
+    final buf = StringBuffer()
+      ..writeln(delim)
+      ..write(fmText);
+    if (!fmText.endsWith('\n')) buf.writeln();
+    buf
+      ..writeln(delim)
+      ..writeln()
+      ..write(body);
+    return buf.toString();
+  }
+
+  /// 创建一篇新文章
+  static String createNew({
+    required String title,
+    DateTime? date,
+    bool draft = true,
+    List<String> categories = const [],
+    List<String> tags = const [],
+    String description = '',
+    String? slug,
+    String body = '',
+    String format = 'yaml',
+  }) {
+    return build(
+      original: const {},
+      format: format,
+      title: title,
+      body: body,
+      date: date ?? DateTime.now(),
+      draft: draft,
+      categories: categories,
+      tags: tags,
+      description: description.isEmpty ? null : description,
+      slug: slug,
+    );
+  }
+
+  /// 日期统一写成 `2024-05-01T10:20:30+08:00` 会太长，
+  /// 用 `2024-05-01 10:20:30` —— Hugo 两种都认，后者更好读。
+  static String _formatDate(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} '
+        '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  }
+
+  // ── YAML 输出 ─────────────────────────────────────
+
+  static String _toYaml(Map<String, Object?> m) {
+    final buf = StringBuffer();
+    m.forEach((k, v) {
+      if (v == null) return;
+      if (v is List) {
+        if (v.isEmpty) return;
+        // 元素都是简单值时用行内数组，短且好读
+        final simple = v.every((e) => e is! Map && e is! List);
+        if (simple) {
+          final items = v.map((e) => _yamlScalar(e)).join(', ');
+          buf.writeln('$k: [$items]');
+        } else {
+          buf.writeln('$k:');
+          for (final e in v) {
+            buf.writeln('  - ${_yamlScalar(e)}');
+          }
+        }
+        return;
+      }
+      if (v is Map) {
+        buf.writeln('$k:');
+        v.forEach((k2, v2) {
+          buf.writeln('  $k2: ${_yamlScalar(v2)}');
+        });
+        return;
+      }
+      buf.writeln('$k: ${_yamlScalar(v)}');
+    });
+    return buf.toString();
+  }
+
+  /// YAML 标量。需要时自动加引号，避免 `:` `#` 开头被当成语法。
+  static String _yamlScalar(Object? v) {
+    if (v == null) return 'null';
+    if (v is bool || v is num) return '$v';
+    final s = '$v';
+
+    final needsQuote = s.isEmpty ||
+        s != s.trim() ||
+        RegExp(r'''^[\s\-?:,\[\]{}#&*!|>'"%@`]''').hasMatch(s) ||
+        s.contains(': ') ||
+        s.contains(' #') ||
+        s.endsWith(':') ||
+        s.toLowerCase() == 'true' ||
+        s.toLowerCase() == 'false' ||
+        s.toLowerCase() == 'null' ||
+        double.tryParse(s) != null;
+
+    if (!needsQuote) return s;
+    // YAML 双引号串里要转义反斜杠和引号
+    final escaped = s.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+    return '"$escaped"';
+  }
+
+  // ── TOML 输出 ─────────────────────────────────────
+
+  static String _toToml(Map<String, Object?> m) {
+    final buf = StringBuffer();
+    m.forEach((k, v) {
+      if (v == null) return;
+      if (v is List) {
+        if (v.isEmpty) return;
+        final items = v.map(_tomlValue).join(', ');
+        buf.writeln('$k = [$items]');
+        return;
+      }
+      buf.writeln('$k = ${_tomlValue(v)}');
+    });
+    return buf.toString();
+  }
+
+  static String _tomlValue(Object? v) {
+    if (v == null) return '""';
+    if (v is bool || v is num) return '$v';
+    if (v is List) {
+      return '[${v.map(_tomlValue).join(', ')}]';
+    }
+    final s = '$v'.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+    return '"$s"';
   }
 }

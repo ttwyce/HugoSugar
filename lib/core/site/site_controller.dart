@@ -479,9 +479,146 @@ class SiteController extends ChangeNotifier {
     }
   }
 
+  // ── 写入 ────────────────────────────────────────────
+
+  /// 保存一篇已有文章。
+  ///
+  /// 只传改动过的字段；[original] 传原文档，用于保留未知 Front Matter 键。
+  Future<SaveResult> savePost({
+    required String relativePath,
+    required String title,
+    required String body,
+    PostDocument? original,
+    bool? draft,
+    List<String>? categories,
+    List<String>? tags,
+  }) async {
+    if (_storage == null) {
+      return SaveResult.failure('站点未就绪，无法保存');
+    }
+    try {
+      final content = FrontMatterBuilder.build(
+        original: original?.frontMatter ?? const {},
+        format: original?.format ?? 'yaml',
+        title: title,
+        body: body,
+        date: original?.date ?? DateTime.now(),
+        draft: draft ?? original?.draft,
+        categories: categories ?? original?.categories,
+        tags: tags ?? original?.tags,
+        description:
+            (original?.description.isEmpty ?? true) ? null : original?.description,
+        slug: original?.slug,
+        weight: original?.weight,
+      );
+
+      await _storage!.writeString(relativePath, content);
+      await _refreshPosts();
+      notifyListeners();
+      return SaveResult.success();
+    } catch (e) {
+      return SaveResult.failure('$e');
+    }
+  }
+
+  /// 新建文章。
+  ///
+  /// 返回新文件的相对路径；失败返回 null 并把原因写进 [error]。
+  Future<String?> createPost({
+    required String title,
+    List<String> categories = const [],
+    List<String> tags = const [],
+    String description = '',
+    bool draft = true,
+  }) async {
+    if (_storage == null || _config == null) {
+      _error = '站点未就绪';
+      return null;
+    }
+    if (title.trim().isEmpty) {
+      _error = '标题不能为空';
+      return null;
+    }
+
+    final dir = _config!.postsDir;
+    final slug = _slugify(title);
+    var relativePath = p.posix.join(dir, '$slug.md');
+
+    // 同名文件已存在 → 加后缀，绝不覆盖用户已有的文章
+    var n = 2;
+    while (await _storage!.existsPath(relativePath)) {
+      relativePath = p.posix.join(dir, '$slug-$n.md');
+      n++;
+    }
+
+    try {
+      final content = FrontMatterBuilder.createNew(
+        title: title.trim(),
+        draft: draft,
+        categories: categories,
+        tags: tags,
+        description: description,
+        body: '',
+      );
+      await _storage!.writeString(relativePath, content);
+      await _refreshPosts();
+      notifyListeners();
+      return relativePath;
+    } catch (e) {
+      _error = '$e';
+      return null;
+    }
+  }
+
+  /// 删除一篇文章
+  Future<bool> deletePost(String relativePath) async {
+    if (_storage == null) return false;
+    try {
+      await _storage!.delete(relativePath);
+      await _refreshPosts();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '$e';
+      return false;
+    }
+  }
+
+  /// 标题转 slug。
+  ///
+  /// 中文标题不能直接当文件名（Hugo 能认，但 URL 会变成百分号编码），
+  /// 所以取「ASCII 化失败就用时间戳」的策略，保证文件名总是合法的。
+  String _slugify(String title) {
+    final s = title
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s-]'), '') // 去掉标点与非 ASCII
+        .replaceAll(RegExp(r'[\s_]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+
+    if (s.isNotEmpty) return s;
+    // 纯中文标题：用时间戳兜底，避免出现空文件名
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return 'post-${now.year}${two(now.month)}${two(now.day)}'
+        '-${two(now.hour)}${two(now.minute)}${two(now.second)}';
+  }
+
   @override
   void dispose() {
     _api.dispose();
     super.dispose();
   }
+}
+
+/// 保存结果
+class SaveResult {
+  const SaveResult._(this.ok, this.message);
+
+  final bool ok;
+  final String? message;
+
+  static SaveResult success() => const SaveResult._(true, null);
+  static SaveResult failure(String msg) => SaveResult._(false, msg);
 }
