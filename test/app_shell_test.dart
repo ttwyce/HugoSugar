@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('文章'), findsWidgets);
-    expect(find.text('笔记'), findsWidgets);
+    expect(find.text('想法'), findsWidgets);
     expect(find.text('AI'), findsWidgets);
     expect(find.text('站点'), findsWidgets);
     expect(find.text('设置'), findsWidgets);
@@ -95,13 +95,30 @@ void main() {
     expect(find.text('跟随系统'), findsOneWidget);
   });
 
-  testWidgets('切到笔记 Tab 显示空状态', (tester) async {
+  testWidgets('想法是第一个 Tab，文章第二', (tester) async {
+    await tester.pumpWidget(
+      _wrap(mode: ThemeMode.light, notes: notes, site: site),
+    );
+    await tester.pumpAndSettle();
+
+    // NavigationBar 的 destination 顺序即 Tab 顺序
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final labels = bar.destinations
+        .cast<NavigationDestination>()
+        .map((e) => e.label)
+        .toList();
+    expect(labels.first, '想法', reason: '想法应该是默认首屏');
+    expect(labels[1], '文章');
+    expect(labels.length, 5);
+  });
+
+  testWidgets('切到想法 Tab 显示空状态', (tester) async {
     await tester.pumpWidget(_wrap(mode: ThemeMode.light, notes: notes, site: site));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.lightbulb_outline));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('还没有笔记'), findsOneWidget);
+    expect(find.textContaining('还没有想法'), findsOneWidget);
   });
 }

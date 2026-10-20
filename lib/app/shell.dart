@@ -57,8 +57,10 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          PostsPage(siteController: widget.siteController),
+          // Tab 顺序：想法 → 文章 → AI → 站点 → 设置
+          // 想法排第一，因为它是最高频的入口：随手记一句比写整篇多得多。
           NotesPage(controller: widget.noteController),
+          PostsPage(siteController: widget.siteController),
           const ChatPage(),
           SitePage(
             controller: widget.siteController,
@@ -85,14 +87,14 @@ class _AppShellState extends State<AppShell> {
           },
           destinations: const [
             NavigationDestination(
+              icon: Icon(Icons.lightbulb_outline),
+              selectedIcon: Icon(Icons.lightbulb),
+              label: '想法',
+            ),
+            NavigationDestination(
               icon: Icon(Icons.article_outlined),
               selectedIcon: Icon(Icons.article),
               label: '文章',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.lightbulb_outline),
-              selectedIcon: Icon(Icons.lightbulb),
-              label: '笔记',
             ),
             NavigationDestination(
               icon: Icon(Icons.auto_awesome_outlined),

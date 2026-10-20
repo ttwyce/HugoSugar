@@ -12,6 +12,7 @@ import 'commit_message.dart';
 import 'git_change.dart';
 import 'git_service.dart';
 import 'github_api.dart';
+import 'post_trash_store.dart';
 import 'site_config.dart';
 
 /// 站点接入的整体状态
@@ -100,6 +101,9 @@ class SiteController extends ChangeNotifier {
 
   List<PostDocument> _posts = const [];
 
+  /// 文章回收站。仓库就绪后按站点 id 惰性打开。
+  PostTrashStore? _trash;
+
   SiteStage get stage => _stage;
   SiteConfig? get config => _config;
   SiteStorage? get storage => _storage;
@@ -108,6 +112,10 @@ class SiteController extends ChangeNotifier {
 
   /// 已解析的文章（含 Front Matter）
   List<PostDocument> get posts => _posts;
+
+  /// 回收站里的文章（已删除、可恢复）
+  List<TrashedPost> get trashedPosts => _trash?.items ?? const [];
+  int get trashCount => _trash?.count ?? 0;
 
   double? get progress => _total > 0 ? _received / _total : null;
 
@@ -612,7 +620,142 @@ class SiteController extends ChangeNotifier {
     }
   }
 
-  /// 删除一篇文章
+  /// 打开（或重开）回收站。
+  ///
+  /// 站点 id 是回收站的隔离键 —— 换一个仓库就是另一个回收站，
+  /// 不能在 A 仓库删的文章出现在 B 仓库的恢复列表里。
+  Future<void> _ensureTrash() async {
+    final id = _config?.id;
+    if (id == null || _storage == null) {
+      _trash = null;
+      return;
+    }
+    if (_trash != null && _trashSiteId == id) return;
+    _trash = await PostTrashStore.open(id);
+    _trashSiteId = id;
+  }
+
+  String? _trashSiteId;
+
+  /// 确保回收站已从磁盘加载。
+  ///
+  /// 站点就绪（clone / 打开）时不会主动读回收站 —— 大多数启动
+  /// 根本用不到它，白读一次文件。UI 在真正要展示回收站时调用。
+  Future<void> loadTrash() async {
+    await _ensureTrash();
+    notifyListeners();
+  }
+
+  /// 把一篇文章移入回收站（软删除）。
+  ///
+  /// 原文完整保存到仓库之外，然后从工作区删除文件。
+  /// 之所以要保存**全文**而不是路径：恢复时必须能原样写回，
+  /// 包括用户自己加的 Front Matter 键。
+  Future<bool> trashPost(String relativePath) async {
+    final storage = _storage;
+    if (storage == null) return false;
+    try {
+      final doc = await readPost(relativePath);
+      if (doc == null) {
+        _error = '文章不存在：$relativePath';
+        return false;
+      }
+      final raw = await storage.readString(relativePath);
+
+      await _ensureTrash();
+      if (_trash == null) {
+        _error = '站点尚未就绪，无法移入回收站';
+        return false;
+      }
+
+      // 先写回收站，再删文件。顺序反了的话，删完崩溃就永久丢失。
+      await _trash!.add(
+        TrashedPost(
+          relativePath: relativePath,
+          title: doc.title,
+          content: raw,
+          deletedAt: DateTime.now(),
+        ),
+      );
+      await storage.delete(relativePath);
+      await _refreshPosts();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '$e';
+      return false;
+    }
+  }
+
+  /// 从回收站恢复一篇文章。
+  ///
+  /// 原路径若已被占用（用户又建了一篇同名的），不覆盖，
+  /// 改为在文件名后加 `-restored` 避免静默丢数据。
+  Future<bool> restorePost(String relativePath) async {
+    final storage = _storage;
+    if (storage == null) return false;
+    try {
+      await _ensureTrash();
+      final item = await _trash?.remove(relativePath);
+      if (item == null) {
+        _error = '回收站里没有这篇文章';
+        return false;
+      }
+
+      var target = item.relativePath;
+      if (await storage.existsPath(target)) {
+        final dot = target.lastIndexOf('.');
+        final base = dot < 0 ? target : target.substring(0, dot);
+        final ext = dot < 0 ? '' : target.substring(dot);
+        target = '$base-restored$ext';
+        var n = 2;
+        while (await storage.existsPath(target)) {
+          target = '$base-restored-$n$ext';
+          n++;
+        }
+      }
+
+      await storage.writeString(target, item.content);
+      await _refreshPosts();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '$e';
+      return false;
+    }
+  }
+
+  /// 永久删除回收站里的一篇
+  Future<bool> purgePost(String relativePath) async {
+    try {
+      await _ensureTrash();
+      final removed = await _trash?.remove(relativePath);
+      if (removed == null) return false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '$e';
+      return false;
+    }
+  }
+
+  /// 清空回收站，返回清掉的条数
+  Future<int> purgeAllTrashedPosts() async {
+    try {
+      await _ensureTrash();
+      final n = await _trash?.clear() ?? 0;
+      notifyListeners();
+      return n;
+    } catch (e) {
+      _error = '$e';
+      return 0;
+    }
+  }
+
+  /// 删除一篇文章（**硬删除**，不进回收站）
+  ///
+  /// 保留给「回收站里再永久删除」以及内部清理用。
+  /// 用户在文章列表里点删除走的是 [trashPost]。
   Future<bool> deletePost(String relativePath) async {
     if (_storage == null) return false;
     try {

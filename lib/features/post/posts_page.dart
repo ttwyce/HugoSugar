@@ -6,6 +6,7 @@ import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import '../editor/editor_page.dart';
 import '../push/push_page.dart';
+import 'post_trash_page.dart';
 import '../../shared/chip_editor.dart';
 
 /// 文章列表的筛选维度
@@ -98,6 +99,15 @@ class _PostsPageState extends State<PostsPage> {
             onPressed: sc.stage == SiteStage.ready ? sc.refresh : null,
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',
+          ),
+          IconButton(
+            onPressed: sc.stage == SiteStage.ready
+                ? () => _openTrash(sc)
+                : null,
+            icon: Icon(
+              sc.trashCount > 0 ? Icons.delete : Icons.delete_outline,
+            ),
+            tooltip: sc.trashCount > 0 ? '回收站（${sc.trashCount}）' : '回收站',
           ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready
@@ -241,6 +251,18 @@ class _PostsPageState extends State<PostsPage> {
     );
   }
 
+  /// 打开回收站。
+  ///
+  /// 先 `await sc.loadTrash()`：回收站是惰性打开的，
+  /// 直接进页面会看到空列表（数据还没从磁盘读上来）。
+  Future<void> _openTrash(SiteController sc) async {
+    await sc.loadTrash();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PostTrashPage(controller: sc)),
+    );
+  }
+
   /// 长按文章行的快捷菜单
   ///
   /// 为什么用长按而不是每行右侧放个「···」：
@@ -344,7 +366,7 @@ class _PostsPageState extends State<PostsPage> {
         title: const Text('删除这篇文章？'),
         content: Text(
           '${post.title}\n${post.relativePath}\n\n'
-          '这是本地文件删除，Git 仓库里的历史记录不受影响。',
+          '会移到回收站，可以在回收站里恢复。',
         ),
         actions: [
           TextButton(
@@ -354,18 +376,17 @@ class _PostsPageState extends State<PostsPage> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: c.danger),
-            child: const Text('删除'),
+            child: const Text('移到回收站'),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-
-    final deleted = await sc.deletePost(post.relativePath);
+    final deleted = await sc.trashPost(post.relativePath);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(deleted ? '已删除' : '删除失败：${sc.error ?? "未知错误"}'),
+        content: Text(deleted ? '已移到回收站' : '删除失败：${sc.error ?? "未知错误"}'),
         duration: const Duration(seconds: 2),
       ),
     );

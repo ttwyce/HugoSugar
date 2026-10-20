@@ -45,12 +45,10 @@ class _NotesPageState extends State<NotesPage> {
   @override
   Widget build(BuildContext context) {
     final notes = c.visibleNotes;
-    final pinned = c.pinnedNotes;
-    final others = c.unpinnedNotes;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('笔记'),
+        title: const Text('想法'),
         actions: [
           IconButton(
             onPressed: () {
@@ -73,7 +71,7 @@ class _NotesPageState extends State<NotesPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _newNote,
-        tooltip: '新建笔记',
+        tooltip: '新建想法',
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -92,7 +90,7 @@ class _NotesPageState extends State<NotesPage> {
                 onChanged: c.setQuery,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: '搜索标题和正文',
+                  hintText: '搜索想法标题和正文',
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 18),
                   suffixIcon: c.query.isEmpty
@@ -148,41 +146,20 @@ class _NotesPageState extends State<NotesPage> {
           Expanded(
             child: notes.isEmpty
                 ? _EmptyView(view: c.view, searching: c.isSearching)
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 96),
-                    children: [
-                      if (pinned.isNotEmpty) ...[
-                        SectionHeader(
-                          '置顶 · ${pinned.length}  ·  会注入 AI 上下文',
-                        ),
-                        for (final n in pinned)
-                          _NoteCard(
-                            note: n,
-                            pinned: true,
-                            onTap: () => _open(n),
-                            onLongPress: () => _showActions(n),
-                          ),
-                      ],
-                      if (others.isNotEmpty) ...[
-                        SectionHeader('全部 · ${others.length}'),
-                        for (final n in others)
-                          _NoteCard(
-                            note: n,
-                            pinned: false,
-                            onTap: () => _open(n),
-                            onLongPress: () => _showActions(n),
-                          ),
-                      ],
-                      if (c.view == NoteView.trashed)
-                        Padding(
-                          padding: const EdgeInsets.all(AppSpace.md),
-                          child: OutlinedButton.icon(
-                            onPressed: _purgeAll,
-                            icon: const Icon(Icons.delete_forever, size: 18),
-                            label: const Text('清空回收站'),
-                          ),
-                        ),
-                    ],
+                : _MasonryGrid(
+                    notes: notes,
+                    onTap: _open,
+                    onLongPress: _showActions,
+                    trailing: c.view == NoteView.trashed
+                        ? Padding(
+                            padding: const EdgeInsets.all(AppSpace.md),
+                            child: OutlinedButton.icon(
+                              onPressed: _purgeAll,
+                              icon: const Icon(Icons.delete_forever, size: 18),
+                              label: const Text('清空回收站'),
+                            ),
+                          )
+                        : null,
                   ),
           ),
         ],
@@ -270,10 +247,10 @@ class _NotesPageState extends State<NotesPage> {
                 leading: Icon(
                   note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
                 ),
-                title: Text(note.pinned ? '取消置顶' : '置顶'),
+                title: Text(note.pinned ? '取消精选' : '精选'),
                 subtitle: note.pinned
                     ? null
-                    : const Text('置顶后会注入 AI 的 System Prompt'),
+                    : const Text('精选的想法会优先提供给 AI'),
                 onTap: () {
                   Navigator.pop(ctx);
                   c.togglePin(note.id);
@@ -426,7 +403,7 @@ class _NotesPageState extends State<NotesPage> {
                 Padding(
                   padding: const EdgeInsets.all(AppSpace.md),
                   child: Text(
-                    '还没有分类。分类只是给笔记分组，和文章的 categories 无关。\n'
+                    '还没有分类。分类只是给想法分组，和文章的 categories 无关。\n'
                     '长按分类可以重命名或删除。',
                     style: TextStyle(
                       fontSize: 12,
@@ -470,7 +447,7 @@ class _NotesPageState extends State<NotesPage> {
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('删除分类'),
-              subtitle: const Text('笔记不会被删除，只是解除归属'),
+              subtitle: const Text('想法不会被删除，只是解除归属'),
               onTap: () {
                 Navigator.pop(ctx);
                 c.deleteCategory(cat.id);
@@ -569,6 +546,113 @@ class _ViewTabs extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+// ── 两列瀑布流 ───────────────────────────────────────
+
+/// 两列瀑布流布局。
+///
+/// 为什么不用 `flutter_staggered_grid_view`：
+/// 本项目对新增依赖很谨慎（AGENTS.md 明确要求先确认 Android 可用性），
+/// 而瀑布流的核心只是「按列高最短优先分配」，不到 30 行。
+///
+/// 算法：维护两列的估算高度，每张卡片分配给当前较矮的一列。
+/// 卡片高度由**内容行数**估算（标题 1 行 + 预览 N 行 + 底部信息 1 行），
+/// 而不是等渲染后再测量 —— 后者需要 CustomMultiChildLayout，
+/// 在长列表里会有明显的抖动。
+class _MasonryGrid extends StatelessWidget {
+  const _MasonryGrid({
+    required this.notes,
+    required this.onTap,
+    required this.onLongPress,
+    this.trailing,
+  });
+
+  final List<Note> notes;
+  final void Function(Note) onTap;
+  final void Function(Note) onLongPress;
+
+  /// 网格之后的附加内容（回收站的「清空」按钮）
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    // 先按估算高度分列，再整体放进 ListView 一次构建。
+    // 分列必须在 build 里做（依赖 notes 顺序），但计算量是 O(n)，很轻。
+    final left = <Note>[];
+    final right = <Note>[];
+    var hLeft = 0.0;
+    var hRight = 0.0;
+
+    for (final n in notes) {
+      final h = _estimateHeight(n);
+      if (hLeft <= hRight) {
+        left.add(n);
+        hLeft += h;
+      } else {
+        right.add(n);
+        hRight += h;
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.sm,
+        0,
+        AppSpace.sm,
+        96,
+      ),
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _column(left, context)),
+            const SizedBox(width: AppSpace.sm),
+            Expanded(child: _column(right, context)),
+          ],
+        ),
+        ?trailing,
+      ],
+    );
+  }
+
+  Widget _column(List<Note> list, BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final n in list)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpace.sm),
+            child: _NoteCard(
+              note: n,
+              pinned: n.pinned,
+              onTap: () => onTap(n),
+              onLongPress: () => onLongPress(n),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 估算卡片高度，只用于分列决策。
+  ///
+  /// 数值不需要精确，只要「长卡片 > 短卡片」的相对关系正确，
+  /// 两列就能保持大致齐平。
+  static double _estimateHeight(Note n) {
+    const titleH = 22.0;
+    const previewLineH = 21.0;
+    const metaH = 18.0;
+    const paddingV = AppSpace.sm * 2;
+    const gapV = AppSpace.xxs + 6;
+
+    var h = titleH + metaH + paddingV + gapV;
+    if (n.preview.isNotEmpty) {
+      // preview 在卡片里最多 2 行，估算按实际截断后的行数
+      final lines = (n.preview.length / 18).ceil().clamp(1, 2);
+      h += lines * previewLineH;
+    }
+    return h;
   }
 }
 
@@ -706,7 +790,7 @@ class _EmptyView extends StatelessWidget {
     if (searching) {
       return const EmptyState(
         icon: Icons.search_off,
-        text: '没有匹配的笔记',
+        text: '没有匹配的想法',
       );
     }
     return switch (view) {
@@ -716,11 +800,11 @@ class _EmptyView extends StatelessWidget {
         ),
       NoteView.pinned => const EmptyState(
           icon: Icons.push_pin_outlined,
-          text: '还没有置顶笔记\n置顶的笔记会注入 AI 上下文',
+          text: '还没有精选想法\n精选的想法会优先提供给 AI',
         ),
       NoteView.active => const EmptyState(
           icon: Icons.lightbulb_outline,
-          text: '还没有笔记\n随手记下灵感，之后可以一键转成文章',
+          text: '还没有想法\n随手记一句，之后可以一键转成文章',
         ),
     };
   }
