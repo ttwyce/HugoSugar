@@ -49,6 +49,9 @@ dependencies:
   # GitHub REST API：拉取仓库列表、读取 Deploy Hook 配置
   http: ^1.2.1
 
+  # Front Matter 解析（YAML 格式）
+  yaml: ^3.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

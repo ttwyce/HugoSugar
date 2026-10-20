@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/post/front_matter.dart';
 import '../../core/site/git_service.dart';
 import '../../core/site/site_config.dart';
 import '../../core/site/site_controller.dart';
@@ -408,7 +409,7 @@ class _ReadyView extends StatelessWidget {
 
   final SiteConfig config;
   final GitStatusSummary? status;
-  final List<String> posts;
+  final List<PostDocument> posts;
   final VoidCallback onReconnect;
   final VoidCallback onDisconnect;
 
@@ -512,7 +513,9 @@ class _ReadyView extends StatelessWidget {
                 color: c.textTertiary,
               ),
               title: Text(
-                posts[i].replaceFirst(RegExp(r'\.md$'), ''),
+                posts[i].title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.4,

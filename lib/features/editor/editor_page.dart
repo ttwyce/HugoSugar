@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_theme.dart';
+import '../../core/site/site_controller.dart';
 
 /// 编辑器：全屏、无 Tab、顶栏自动淡出。
 ///
@@ -11,10 +12,23 @@ import '../../app/theme/app_theme.dart';
 /// - 输入 2 秒后顶栏淡到 0.15，点任意处恢复
 /// - 底部只显示字数与保存状态
 /// - 正文行高 1.75，左右边距 20
+///
+/// 传入 [relativePath] 时读取真实文件；否则是新建的空稿。
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key, required this.title});
+  const EditorPage({
+    super.key,
+    required this.title,
+    this.relativePath,
+    this.controller,
+  });
 
   final String title;
+
+  /// 相对站点根的文件路径，如 content/posts/hello.md
+  final String? relativePath;
+
+  /// 用来读文件；为空时编辑器不可加载真实内容
+  final SiteController? controller;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -28,15 +42,50 @@ class _EditorPageState extends State<EditorPage> {
   Timer? _idleTimer;
   bool _chromeVisible = true;
 
+  /// 是否还在加载真实文件
+  bool _loading = false;
+
+  /// 加载失败的原因
+  String? _loadError;
+
+  /// 文章元信息（草稿状态、分类等）
+  String? _statusLabel;
+
   @override
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.title);
-    _bodyCtrl = TextEditingController(
-      text: '在这里开始写。\n\n'
-          '顶栏会在你停笔两秒后淡出，点击任意位置可以恢复。',
-    );
+    _bodyCtrl = TextEditingController();
     _bodyCtrl.addListener(_onTyping);
+    _load();
+  }
+
+  Future<void> _load() async {
+    final path = widget.relativePath;
+    final ctrl = widget.controller;
+    if (path == null || ctrl == null) {
+      // 新建空稿
+      return;
+    }
+
+    setState(() => _loading = true);
+    final doc = await ctrl.readPost(path);
+    if (!mounted) return;
+
+    if (doc == null) {
+      setState(() {
+        _loading = false;
+        _loadError = '无法读取文件：$path';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = false;
+      _titleCtrl.text = doc.title;
+      _bodyCtrl.text = doc.body;
+      _statusLabel = doc.statusLabel;
+    });
   }
 
   @override
@@ -110,7 +159,7 @@ class _EditorPageState extends State<EditorPage> {
                     Row(
                       children: [
                         Text(
-                          'draft',
+                          _statusLabel ?? '草稿',
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
@@ -124,7 +173,7 @@ class _EditorPageState extends State<EditorPage> {
                         ),
                         const SizedBox(width: AppSpace.xs),
                         Text(
-                          '刚刚',
+                          _loading ? '读取中…' : '$_charCount 字',
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
@@ -133,6 +182,17 @@ class _EditorPageState extends State<EditorPage> {
                         ),
                       ],
                     ),
+                    if (_loadError != null) ...[
+                      const SizedBox(height: AppSpace.xxs),
+                      Text(
+                        _loadError!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: c.danger,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: AppSpace.md),
                     // 正文
                     Expanded(
@@ -223,17 +283,17 @@ class _EditorPageState extends State<EditorPage> {
                             color: c.textTertiary,
                           ),
                         ),
-                        const SizedBox(width: AppSpace.xs),
-                        Icon(Icons.check_circle, size: 12, color: c.textTertiary),
-                        const SizedBox(width: 2),
-                        Text(
-                          '已保存',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: c.textTertiary,
+                        if (widget.relativePath != null) ...[
+                          const SizedBox(width: AppSpace.xs),
+                          Text(
+                            '· 只读预览',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: c.textTertiary,
+                            ),
                           ),
-                        ),
+                        ],
                         const Spacer(),
                         TextButton.icon(
                           onPressed: () {},

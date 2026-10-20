@@ -26,8 +26,11 @@ abstract class SiteStorage {
   /// 删除
   Future<void> delete(String relativePath, {bool recursive = false});
 
-  /// 列目录下的文件（相对路径，不含子目录递归）
-  Future<List<String>> listFiles(
+  /// 递归列出目录下所有文件，返回**相对站点的路径**。
+  ///
+  /// Hugo 的 content 经常有子目录（content/posts/tech/a.md），
+  /// 不递归会漏掉一大半文章。只保留递归版本，避免误用非递归接口。
+  Future<List<String>> listFilesRecursive(
     String relativeDir, {
     String extension = '',
   });
@@ -90,25 +93,24 @@ class AppPrivateStorage implements SiteStorage {
   }
 
   @override
-  Future<List<String>> listFiles(
+  Future<List<String>> listFilesRecursive(
     String relativeDir, {
     String extension = '',
   }) async {
     final dir = Directory(_abs(relativeDir));
     if (!await dir.exists()) return const [];
 
-    final entries = await dir.list(followLinks: false).toList();
-    final names = <String>[];
-    for (final e in entries) {
+    final paths = <String>[];
+    await for (final e in dir.list(followLinks: false, recursive: true)) {
       if (e is! File) continue;
       final name = p.basename(e.path);
-      // 跳过隐藏文件（.gitignore 之类）
       if (name.startsWith('.')) continue;
       if (extension.isNotEmpty && !name.endsWith(extension)) continue;
-      names.add(name);
+      // 转成相对站点根的路径，供 UI 与 Git 层共用
+      paths.add(p.relative(e.path, from: root.path));
     }
-    names.sort();
-    return names;
+    paths.sort();
+    return paths;
   }
 
   String _abs(String relativePath) => p.join(root.path, relativePath);

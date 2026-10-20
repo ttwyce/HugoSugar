@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../fs/site_storage.dart';
+import '../post/front_matter.dart';
 import 'git_service.dart';
 import 'github_api.dart';
 import 'site_config.dart';
@@ -77,14 +78,16 @@ class SiteController extends ChangeNotifier {
   int _received = 0;
   int _total = 0;
 
-  List<String> _posts = const [];
+  List<PostDocument> _posts = const [];
 
   SiteStage get stage => _stage;
   SiteConfig? get config => _config;
   SiteStorage? get storage => _storage;
   String? get error => _error;
   CloneFailure? get failure => _failure;
-  List<String> get posts => _posts;
+
+  /// 已解析的文章（含 Front Matter）
+  List<PostDocument> get posts => _posts;
 
   double? get progress => _total > 0 ? _received / _total : null;
 
@@ -391,7 +394,89 @@ class SiteController extends ChangeNotifier {
       _posts = const [];
       return;
     }
-    _posts = await _storage!.listFiles(dir, extension: '.md');
+
+    // 递归：Hugo 的 content/posts 下经常再分目录
+    final paths = await _storage!.listFilesRecursive(dir, extension: '.md');
+
+    final parsed = <PostDocument>[];
+    for (final rel in paths) {
+      try {
+        final content = await _storage!.readString(rel);
+        parsed.add(
+          FrontMatter.parse(
+            relativePath: rel,
+            fileName: p.basename(rel),
+            content: content,
+          ),
+        );
+      } catch (_) {
+        // 单个文件读失败不能影响整张列表
+      }
+    }
+
+    // 有日期的按日期倒序，没日期的排后面并按文件名
+    parsed.sort((a, b) {
+      final da = a.date;
+      final db = b.date;
+      if (da != null && db != null) return db.compareTo(da);
+      if (da != null) return -1;
+      if (db != null) return 1;
+      return a.relativePath.compareTo(b.relativePath);
+    });
+
+    _posts = parsed;
+  }
+
+  // ── 派生统计 ────────────────────────────────────────
+
+  /// 所有分类（按出现次数降序）
+  List<String> get allCategories => _collect((p) => p.categories);
+
+  /// 所有标签（按出现次数降序）
+  List<String> get allTags => _collect((p) => p.tags);
+
+  List<String> _collect(List<String> Function(PostDocument) pick) {
+    final counter = <String, int>{};
+    for (final p in _posts) {
+      for (final v in pick(p)) {
+        counter[v] = (counter[v] ?? 0) + 1;
+      }
+    }
+    final keys = counter.keys.toList()
+      ..sort((a, b) {
+        final d = counter[b]!.compareTo(counter[a]!);
+        return d != 0 ? d : a.compareTo(b);
+      });
+    return keys;
+  }
+
+  /// 某分类下的文章数
+  int countInCategory(String name) =>
+      _posts.where((p) => p.categories.contains(name)).length;
+
+  /// 某标签下的文章数
+  int countWithTag(String name) =>
+      _posts.where((p) => p.tags.contains(name)).length;
+
+  /// 草稿数
+  int get draftCount => _posts.where((p) => p.draft).length;
+
+  /// 已发布数
+  int get publishedCount => _posts.where((p) => !p.draft).length;
+
+  /// 读一整篇（编辑器用）
+  Future<PostDocument?> readPost(String relativePath) async {
+    if (_storage == null) return null;
+    try {
+      final content = await _storage!.readString(relativePath);
+      return FrontMatter.parse(
+        relativePath: relativePath,
+        fileName: p.basename(relativePath),
+        content: content,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
