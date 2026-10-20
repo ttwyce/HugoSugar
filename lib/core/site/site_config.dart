@@ -7,6 +7,7 @@ class SiteConfig {
     required this.branch,
     required this.postsDir,
     this.lastSyncedAt,
+    this.deployHookUrl,
   });
 
   /// 内部标识，也是本地目录名
@@ -27,6 +28,11 @@ class SiteConfig {
   /// 上次同步时间
   final DateTime? lastSyncedAt;
 
+  /// Vercel / Netlify 等平台的 Deploy Hook 地址。
+  /// 为空表示不触发。放在站点配置里而不是全局设置，因为不同站点
+  /// 对应不同项目的 hook。
+  final String? deployHookUrl;
+
   /// 从 URL 推导 `owner/repo`，用于展示
   String get repoSlug {
     var s = repoUrl.trim();
@@ -42,6 +48,7 @@ class SiteConfig {
     String? branch,
     String? postsDir,
     DateTime? lastSyncedAt,
+    String? deployHookUrl,
   }) {
     return SiteConfig(
       id: id,
@@ -50,6 +57,7 @@ class SiteConfig {
       branch: branch ?? this.branch,
       postsDir: postsDir ?? this.postsDir,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      deployHookUrl: deployHookUrl ?? this.deployHookUrl,
     );
   }
 
@@ -60,6 +68,7 @@ class SiteConfig {
         'branch': branch,
         'postsDir': postsDir,
         'lastSyncedAt': lastSyncedAt?.toIso8601String(),
+        'deployHookUrl': deployHookUrl,
       };
 
   static SiteConfig fromJson(Map<String, Object?> json) {
@@ -72,6 +81,7 @@ class SiteConfig {
       lastSyncedAt: json['lastSyncedAt'] == null
           ? null
           : DateTime.tryParse(json['lastSyncedAt'] as String),
+      deployHookUrl: json['deployHookUrl'] as String?,
     );
   }
 }

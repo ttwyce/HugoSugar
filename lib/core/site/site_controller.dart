@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import '../fs/site_storage.dart';
 import '../post/front_matter.dart';
 import '../settings/app_settings.dart';
+import 'deploy_hook_service.dart';
+import 'git_change.dart';
 import 'git_service.dart';
 import 'github_api.dart';
 import 'site_config.dart';
@@ -596,6 +598,210 @@ class SiteController extends ChangeNotifier {
     }
   }
 
+  // ── M4：推送 ────────────────────────────────────────
+
+  /// 读取当前未提交的变更。
+  List<GitChange> get changes {
+    final root = repoPath;
+    if (root == null) return const [];
+    return GitService.readChanges(root) ?? const [];
+  }
+
+  /// 本地相对远端的领先/落后
+  ({int ahead, int behind})? get divergence {
+    final root = repoPath;
+    final cfg = _config;
+    if (root == null || cfg == null) return null;
+    return GitService.divergence(root, cfg.branch);
+  }
+
+  /// 生成默认 commit message
+  String suggestCommitMessage() =>
+      DeployHookService.suggestCommitMessage(
+        changes.map((e) => e.path).toList(),
+      );
+
+  /// 执行一次完整推送：commit → push →（可选）触发 Deploy Hook。
+  ///
+  /// [pat] 由调用方传入而不是这里读磁盘：token 存在
+  /// flutter_secure_storage 里，属于 UI 层的职责，core 不碰密钥。
+  ///
+  /// 返回 null 表示成功，否则返回给用户看的错误文案。
+  /// 每一步都会写进 [pushLog] 供 UI 展开查看。
+  Future<PushOutcome> push({
+    required String pat,
+    required String commitMessage,
+    bool triggerDeployHook = true,
+    void Function(String)? onStep,
+  }) async {
+    final root = repoPath;
+    final cfg = _config;
+    if (root == null || cfg == null) {
+      return PushOutcome.failure('站点未就绪');
+    }
+    if (pat.trim().isEmpty) {
+      return PushOutcome.failure('缺少 GitHub 访问令牌，请到站点页重新填写');
+    }
+
+    final log = <String>[];
+    void step(String s) {
+      log.add(s);
+      onStep?.call(s);
+    }
+
+    // 1) 先看有没有东西可提交
+    final pending = GitService.readChanges(root) ?? const [];
+    if (pending.isEmpty) {
+      step('没有需要提交的改动');
+      return PushOutcome.failure('没有需要提交的改动', log: log);
+    }
+    if (pending.any((e) => e.isConflict)) {
+      step('存在未解决的冲突');
+      return PushOutcome.failure(
+        '有 ${pending.where((e) => e.isConflict).length} 个文件存在合并冲突，'
+        '需要先解决冲突再推送',
+        log: log,
+      );
+    }
+
+    // 2) 推送前先看是否落后远端 —— 早提示比等 push 被拒好
+    final div = GitService.divergence(root, cfg.branch);
+    if (div != null && div.behind > 0) {
+      step('本地落后远端 ${div.behind} 个提交');
+      return PushOutcome.failure(
+        '远端有 ${div.behind} 个你本地没有的提交。'
+        '为避免覆盖别人的改动，请先拉取同步（站点页 → 重新克隆）。',
+        log: log,
+        needsPull: true,
+      );
+    }
+
+    // 3) commit
+    String sha;
+    try {
+      step('提交中…');
+      final msg = commitMessage.trim().isEmpty
+          ? DeployHookService.suggestCommitMessage(pending.map((e) => e.path).toList())
+          : commitMessage.trim();
+      sha = GitService.commitAll(
+        repoPath: root,
+        message: msg,
+        branch: cfg.branch,
+      );
+      step('已提交 $sha（${pending.length} 个文件）');
+    } on GitOperationError catch (e) {
+      step('提交失败：${e.rawMessage}');
+      return PushOutcome.failure(_humanize(e), log: log);
+    }
+
+    // 4) push
+    try {
+      step('推送中…');
+      GitService.push(
+        repoPath: root,
+        branch: cfg.branch,
+        pat: pat.trim(),
+      );
+      step('推送成功');
+    } on GitOperationError catch (e) {
+      step('推送失败：${e.rawMessage}');
+      final hint = e.looksLikeNetwork
+          ? '网络不稳定，可重试；提交已在本地，不会丢。'
+          : '推送被拒绝时通常是远端有新提交。提交已在本地，可以稍后重试。';
+      return PushOutcome.failure(
+        '${_humanize(e)}\n$hint',
+        log: log,
+      );
+    }
+
+    // 5) 刷新站点（.git 变了但文章内容没变，这里主要是更新 lastSyncedAt）
+    await _touchSynced();
+    notifyListeners();
+
+    // 6) Deploy Hook
+    DeployResult? deploy;
+    final hook = cfg.deployHookUrl?.trim() ?? '';
+    if (triggerDeployHook && hook.isNotEmpty) {
+      step('触发部署…');
+      deploy = await DeployHookService.trigger(hook);
+      step(deploy.ok ? '部署已触发' : '部署触发失败：${deploy.message}');
+    }
+
+    return PushOutcome.success(
+      commitSha: sha,
+      log: log,
+      deploy: deploy,
+    );
+  }
+
+  /// push 之后更新 lastSyncedAt 并落盘
+  Future<void> _touchSynced() async {
+    final cfg = _config;
+    final storage = _storage;
+    if (cfg == null || storage == null) return;
+    final updated = cfg.copyWith(lastSyncedAt: DateTime.now());
+    _config = updated;
+    try {
+      await File(p.join(storage.root.path, _configFileName))
+          .writeAsString(jsonEncode(updated.toJson()), flush: true);
+    } catch (_) {
+      // 时间戳写不进去不影响使用
+    }
+  }
+
+  /// 保存 Deploy Hook 地址
+  Future<bool> setDeployHook(String url) async {
+    final cfg = _config;
+    final storage = _storage;
+    if (cfg == null || storage == null) return false;
+
+    final trimmed = url.trim();
+    if (trimmed.isNotEmpty) {
+      final err = DeployHookService.validate(trimmed);
+      if (err != null) {
+        _error = err;
+        notifyListeners();
+        return false;
+      }
+    }
+
+    final updated = cfg.copyWith(deployHookUrl: trimmed);
+    _config = updated;
+    try {
+      await File(p.join(storage.root.path, _configFileName))
+          .writeAsString(jsonEncode(updated.toJson()), flush: true);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '$e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// 把 libgit2 的原文翻译成用户能看懂的句子。
+  ///
+  /// 保留原文在日志里，但主提示必须是人话 ——
+  /// "callback returned error" 这种对用户毫无意义。
+  String _humanize(GitOperationError e) {
+    final s = e.rawMessage.toLowerCase();
+    if (s.contains('authentication') || s.contains('401')) {
+      return '认证失败：GitHub 令牌可能已过期或权限不足';
+    }
+    if (s.contains('403') || s.contains('forbidden')) {
+      return '权限不足：令牌需要 repo 权限';
+    }
+    if (s.contains('non-fast-forward') ||
+        s.contains('rejected') ||
+        s.contains('fetch first')) {
+      return '推送被拒绝：远端有本地没有的提交';
+    }
+    if (e.looksLikeNetwork) {
+      return '网络错误：${e.rawMessage}';
+    }
+    return e.rawMessage;
+  }
+
   /// 按设置的命名规则生成文件名主干（不含扩展名）。
   ///
   /// 三种规则：
@@ -662,4 +868,60 @@ class SaveResult {
 
   static SaveResult success() => const SaveResult._(true, null);
   static SaveResult failure(String msg) => SaveResult._(false, msg);
+}
+
+/// 一次推送的结果。
+///
+/// 不只是成功/失败两态：还要带上「要不要先拉取」这种可操作的提示，
+/// 以及每一步的执行日志 —— 用户点推送失败时最想知道「到底卡在哪」。
+class PushOutcome {
+  const PushOutcome._({
+    required this.ok,
+    this.message,
+    this.commitSha,
+    this.log = const [],
+    this.needsPull = false,
+    this.deploy,
+  });
+
+  final bool ok;
+
+  /// 失败时的用户可读原因（已 humanize）
+  final String? message;
+
+  /// 成功的短 SHA
+  final String? commitSha;
+
+  /// 执行过程日志，按顺序
+  final List<String> log;
+
+  /// 是否因为「落后远端」而失败，UI 可据此提示「先拉取」
+  final bool needsPull;
+
+  /// Deploy Hook 结果（未配置时为 null）
+  final DeployResult? deploy;
+
+  static PushOutcome success({
+    required String commitSha,
+    List<String> log = const [],
+    DeployResult? deploy,
+  }) =>
+      PushOutcome._(
+        ok: true,
+        commitSha: commitSha,
+        log: log,
+        deploy: deploy,
+      );
+
+  static PushOutcome failure(
+    String message, {
+    List<String> log = const [],
+    bool needsPull = false,
+  }) =>
+      PushOutcome._(
+        ok: false,
+        message: message,
+        log: log,
+        needsPull: needsPull,
+      );
 }

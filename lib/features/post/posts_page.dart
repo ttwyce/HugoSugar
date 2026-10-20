@@ -5,6 +5,7 @@ import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import '../editor/editor_page.dart';
+import '../push/push_page.dart';
 
 /// 文章列表的筛选维度
 enum _Filter { all, drafts, published }
@@ -96,6 +97,13 @@ class _PostsPageState extends State<PostsPage> {
             onPressed: sc.stage == SiteStage.ready ? sc.refresh : null,
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',
+          ),
+          IconButton(
+            onPressed: sc.stage == SiteStage.ready
+                ? () => _openPush(sc)
+                : null,
+            icon: const Icon(Icons.cloud_upload_outlined),
+            tooltip: '推送到 GitHub',
           ),
           const SizedBox(width: AppSpace.xs),
         ],
@@ -222,6 +230,13 @@ class _PostsPageState extends State<PostsPage> {
           controller: widget.siteController,
         ),
       ),
+    );
+  }
+
+  /// 打开推送页
+  void _openPush(SiteController sc) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PushPage(controller: sc)),
     );
   }
 

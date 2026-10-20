@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:git2dart/git2dart.dart';
 import 'package:path/path.dart' as p;
 
+import 'git_change.dart';
+
 /// 一次 clone / fetch 的进度
 class GitProgress {
   const GitProgress({
@@ -240,8 +242,250 @@ class GitService {
     if (segs.length < 2 || repoName.replaceAll('.git', '').isEmpty) {
       throw ArgumentError('地址里缺少用户名或仓库名');
     }
-
     return s;
+  }
+
+  // ── M4：变更 / 提交 / 推送 ───────────────────────────
+
+  /// 读取工作区与暂存区的变更明细。
+  ///
+  /// 返回空列表表示干净，读不到仓库时返回 null（区别于「没有变更」）。
+  static List<GitChange>? readChanges(String repoPath) {
+    Repository? repo;
+    try {
+      if (!Directory(p.join(repoPath, '.git')).existsSync()) return null;
+      repo = Repository.open(repoPath);
+
+      final status = repo.status;
+      final out = <GitChange>[];
+
+      for (final entry in status.entries) {
+        final path = entry.key;
+        final flags = entry.value;
+        if (flags.contains(GitStatus.ignored)) continue;
+
+        final change = _classify(path, flags);
+        if (change != null) out.add(change);
+      }
+
+      // 按路径排序，让两个平台的列表顺序一致，便于对比与测试
+      out.sort((a, b) => a.path.compareTo(b.path));
+      return out;
+    } catch (_) {
+      return null;
+    } finally {
+      repo?.free();
+    }
+  }
+
+  /// 把 libgit2 的位标志翻译成单一结论。
+  ///
+  /// 顺序很重要：冲突优先级最高，其次是删除，再到新增，最后修改。
+  /// 例如一个文件同时 `wtNew | indexNew`，用户希望看到「新增」。
+  static GitChange? _classify(String path, Set<GitStatus> flags) {
+    if (flags.isEmpty || flags.contains(GitStatus.current)) return null;
+
+    bool has(GitStatus s) => flags.contains(s);
+
+    // 冲突先判断：libgit2 可能对冲突文件同时给出 wtModified
+    if (has(GitStatus.conflicted)) {
+      return GitChange(
+        path: path,
+        kind: GitChangeKind.conflicted,
+        staged: false,
+      );
+    }
+
+    final staged = has(GitStatus.indexNew) ||
+        has(GitStatus.indexModified) ||
+        has(GitStatus.indexDeleted) ||
+        has(GitStatus.indexRenamed);
+
+    if (has(GitStatus.wtDeleted) || has(GitStatus.indexDeleted)) {
+      return GitChange(
+        path: path,
+        kind: GitChangeKind.deleted,
+        staged: has(GitStatus.indexDeleted),
+      );
+    }
+    if (has(GitStatus.wtRenamed) || has(GitStatus.indexRenamed)) {
+      return GitChange(
+        path: path,
+        kind: GitChangeKind.renamed,
+        staged: has(GitStatus.indexRenamed),
+      );
+    }
+    if (has(GitStatus.wtNew) || has(GitStatus.indexNew)) {
+      return GitChange(path: path, kind: GitChangeKind.added, staged: staged);
+    }
+    if (has(GitStatus.wtModified) ||
+        has(GitStatus.indexModified) ||
+        has(GitStatus.wtTypeChange) ||
+        has(GitStatus.indexTypeChange)) {
+      return GitChange(path: path, kind: GitChangeKind.modified, staged: staged);
+    }
+
+    // 其余（wtUnreadable 等）按修改处理，至少让用户知道它不干净
+    return GitChange(path: path, kind: GitChangeKind.modified, staged: staged);
+  }
+
+  /// 暂存全部变更并创建一次提交。
+  ///
+  /// [authorName] / [authorEmail] 必须给，不给就用占位身份 ——
+  /// clone 下来的仓库可能没配 user.name，`Signature.defaultSignature` 会抛异常。
+  ///
+  /// 返回新 commit 的短 SHA；没有可提交内容或失败时抛 [GitOperationError]。
+  static String commitAll({
+    required String repoPath,
+    required String message,
+    String authorName = 'HugoSugar',
+    String authorEmail = 'hugosugar@users.noreply.github.com',
+    required String branch,
+  }) {
+    Repository? repo;
+    try {
+      repo = Repository.open(repoPath);
+
+      // 1) 全部加入暂存区
+      final index = repo.index;
+      try {
+        index.addAll(['*']);
+        if (index.hasConflicts) {
+          throw GitOperationError(
+            step: 'commit',
+            rawMessage: '存在未解决的合并冲突，请先处理冲突文件再提交',
+          );
+        }
+        index.write();
+
+        // 2) 由 index 生成 tree
+        final treeOid = index.writeTree(repo);
+        final tree = Tree.lookup(repo: repo, oid: treeOid);
+
+        // 3) 取 HEAD 作为父提交；空仓库（尚无 commit）时没有父
+        final parents = <Commit>[];
+        try {
+          final headRef = repo.head;
+          if (!repo.isEmpty) {
+            parents.add(Commit.lookup(repo: repo, oid: headRef.target));
+          }
+        } catch (_) {
+          // 空仓库或 detached HEAD 读不到父提交，忽略即可
+        }
+
+        // 4) 建签名。时间用当前时间，offset 用本地时区分钟数
+        final now = DateTime.now();
+        final sig = Signature.create(
+          name: authorName,
+          email: authorEmail,
+          time: now.millisecondsSinceEpoch ~/ 1000,
+          offset: now.timeZoneOffset.inMinutes,
+        );
+
+        final oid = Commit.create(
+          repo: repo,
+          updateRef: 'refs/heads/$branch',
+          author: sig,
+          committer: sig,
+          message: message,
+          tree: tree,
+          parents: parents,
+        );
+
+        final sha = oid.toString();
+        return sha.length > 7 ? sha.substring(0, 7) : sha;
+      } finally {
+        index.free();
+      }
+    } on GitOperationError {
+      rethrow;
+    } on Git2DartError catch (e) {
+      throw GitOperationError(step: 'commit', rawMessage: e.message);
+    } catch (e) {
+      throw GitOperationError(step: 'commit', rawMessage: '$e');
+    } finally {
+      repo?.free();
+    }
+  }
+
+  /// 推送到 origin。
+  ///
+  /// 用 `+refs/heads/x:refs/heads/x` 强制推是**刻意不做**的：
+  /// 直接 push 若被拒（远端有别人的提交），让上层展示冲突提示，
+  /// 由用户决定是拉取合并还是覆盖，绝不静默强推。
+  static void push({
+    required String repoPath,
+    required String branch,
+    required String pat,
+    void Function(GitProgress)? onProgress,
+  }) {
+    Repository? repo;
+    Remote? remote;
+    try {
+      repo = Repository.open(repoPath);
+      remote = Remote.lookup(repo: repo, name: 'origin');
+      remote.push(
+        refspecs: ['refs/heads/$branch:refs/heads/$branch'],
+        callbacks: Callbacks(
+          credentials: UserPass(username: 'x-access-token', password: pat),
+          transferProgress: (prog) {
+            onProgress?.call(
+              GitProgress(
+                phase: 'push',
+                receivedObjects: prog.receivedObjects,
+                totalObjects: prog.totalObjects,
+              ),
+            );
+          },
+        ),
+      );
+    } on Git2DartError catch (e) {
+      throw GitOperationError(step: 'push', rawMessage: e.message);
+    } catch (e) {
+      throw GitOperationError(step: 'push', rawMessage: '$e');
+    } finally {
+      remote?.free();
+      repo?.free();
+    }
+  }
+
+  /// 本地 HEAD 相对 origin 的领先/落后。
+  ///
+  /// 用来在推送前提示「你落后远端 N 个提交」——
+  /// 这比等 push 被拒再解释要友好得多。
+  static ({int ahead, int behind})? divergence(
+    String repoPath,
+    String branch,
+  ) {
+    Repository? repo;
+    try {
+      repo = Repository.open(repoPath);
+      if (repo.isEmpty) return (ahead: 0, behind: 0);
+
+      final local = repo.head.target;
+
+      Oid remoteOid;
+      try {
+        final remoteRef = Reference.lookup(
+          repo: repo,
+          name: 'refs/remotes/origin/$branch',
+        );
+        remoteOid = remoteRef.target;
+      } catch (_) {
+        // 没有 origin 跟踪分支：还没 push 过，本地领先未知但肯定是 0 behind
+        return (ahead: 0, behind: 0);
+      }
+
+      // 注意：这个 API 在 git2dart 里是 Repository 的方法，
+      // 返回 [ahead, behind] 两元素列表，不是元组，也没有独立的 Graph 对象。
+      final result = repo.aheadBehind(local: local, upstream: remoteOid);
+      if (result.length < 2) return null;
+      return (ahead: result[0], behind: result[1]);
+    } catch (_) {
+      return null;
+    } finally {
+      repo?.free();
+    }
   }
 
   /// 从规范化 URL 中取出 owner / repo。
