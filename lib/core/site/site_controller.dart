@@ -484,6 +484,10 @@ class SiteController extends ChangeNotifier {
   /// 保存一篇已有文章。
   ///
   /// 只传改动过的字段；[original] 传原文档，用于保留未知 Front Matter 键。
+  ///
+  /// 注意 [date] 需要显式传：传 null 表示「沿用原文日期」，
+  /// 但不能用 `date ?? original.date` 来区分「没改」和「清空」，
+  /// 因为 Hugo 的日期是必填项，清空没有意义 —— 沿用即可。
   Future<SaveResult> savePost({
     required String relativePath,
     required String title,
@@ -492,6 +496,8 @@ class SiteController extends ChangeNotifier {
     bool? draft,
     List<String>? categories,
     List<String>? tags,
+    DateTime? date,
+    String? description,
   }) async {
     if (_storage == null) {
       return SaveResult.failure('站点未就绪，无法保存');
@@ -502,12 +508,12 @@ class SiteController extends ChangeNotifier {
         format: original?.format ?? 'yaml',
         title: title,
         body: body,
-        date: original?.date ?? DateTime.now(),
+        date: date ?? original?.date ?? DateTime.now(),
         draft: draft ?? original?.draft,
         categories: categories ?? original?.categories,
         tags: tags ?? original?.tags,
-        description:
-            (original?.description.isEmpty ?? true) ? null : original?.description,
+        // 简介允许被清空，所以传空串时要写成「删除该键」而不是沿用旧值
+        description: description ?? original?.description,
         slug: original?.slug,
         weight: original?.weight,
       );

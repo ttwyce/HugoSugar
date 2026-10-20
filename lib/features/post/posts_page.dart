@@ -185,6 +185,7 @@ class _PostsPageState extends State<PostsPage> {
                     _PostRow(
                       post: visible[i],
                       onTap: () => _open(visible[i]),
+                      onLongPress: () => _showPostMenu(sc, visible[i]),
                     ),
                   ],
               ],
@@ -220,6 +221,136 @@ class _PostsPageState extends State<PostsPage> {
           relativePath: post.relativePath,
           controller: widget.siteController,
         ),
+      ),
+    );
+  }
+
+  /// 长按文章行的快捷菜单
+  ///
+  /// 为什么用长按而不是每行右侧放个「···」：
+  /// 列表要保持干净（设计原则「正文优先」），而删除是低频操作，
+  /// 长按藏起来足够，也不会因为手指滑错就点到删除。
+  Future<void> _showPostMenu(SiteController sc, PostDocument post) async {
+    final c = context.appColors;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                AppSpace.sm,
+                AppSpace.md,
+                4,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      post.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined, size: 20),
+              title: const Text('打开编辑'),
+              onTap: () => Navigator.pop(ctx, 'open'),
+            ),
+            ListTile(
+              leading: Icon(
+                post.draft
+                    ? Icons.public_outlined
+                    : Icons.visibility_off_outlined,
+                size: 20,
+              ),
+              title: Text(post.draft ? '发布这篇' : '改为草稿'),
+              onTap: () => Navigator.pop(ctx, 'toggleDraft'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, size: 20, color: c.danger),
+              title: Text('删除', style: TextStyle(color: c.danger)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+            const SizedBox(height: AppSpace.xs),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    switch (action) {
+      case 'open':
+        _open(post);
+      case 'toggleDraft':
+        await _toggleDraft(sc, post);
+      case 'delete':
+        await _confirmDelete(sc, post);
+    }
+  }
+
+  Future<void> _toggleDraft(SiteController sc, PostDocument post) async {
+    final result = await sc.savePost(
+      relativePath: post.relativePath,
+      title: post.title,
+      body: post.body,
+      original: post,
+      draft: !post.draft,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.ok
+              ? (post.draft ? '已发布' : '已改为草稿')
+              : '修改失败：${result.message}',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(SiteController sc, PostDocument post) async {
+    final c = context.appColors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除这篇文章？'),
+        content: Text(
+          '${post.title}\n${post.relativePath}\n\n'
+          '这是本地文件删除，Git 仓库里的历史记录不受影响。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: c.danger),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final deleted = await sc.deletePost(post.relativePath);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(deleted ? '已删除' : '删除失败：${sc.error ?? "未知错误"}'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -489,10 +620,15 @@ class _Chip extends StatelessWidget {
 // ── 文章行 ────────────────────────────────────────────
 
 class _PostRow extends StatelessWidget {
-  const _PostRow({required this.post, required this.onTap});
+  const _PostRow({
+    required this.post,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final PostDocument post;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -506,6 +642,7 @@ class _PostRow extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpace.md,

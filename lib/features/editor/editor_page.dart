@@ -135,12 +135,16 @@ class _EditorPageState extends State<EditorPage> {
     _history.seed(doc.title, doc.body);
   }
 
+  /// 是否已删除本文。删除后要阻止 dispose 里的兜底保存，
+  /// 否则「删了又被写回来」—— 因为 _flushOnExit 会把内存内容重新落盘。
+  bool _deleted = false;
+
   @override
   void dispose() {
     _chromeTimer?.cancel();
     _saveTimer?.cancel();
     // 离开时若还有未保存内容，尽力保存一次（不阻塞 UI）
-    _flushOnExit();
+    if (!_deleted) _flushOnExit();
     _bodyCtrl.removeListener(_onBodyChanged);
     _titleCtrl.removeListener(_onTitleChanged);
     _titleCtrl.dispose();
@@ -590,9 +594,23 @@ class _EditorPageState extends State<EditorPage> {
                     ),
                     const Spacer(),
                     IconButton(
-                      onPressed: () => _showMetaSheet(),
+                      onPressed: _showMetaSheet,
                       icon: const Icon(Icons.tune, size: 20),
-                      tooltip: '文章信息',
+                      tooltip: '文章信息（分类/标签/日期）',
+                    ),
+                    // 更多操作：删除等低频但危险的操作收进来，避免误触
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_horiz, size: 20),
+                      tooltip: '更多',
+                      onSelected: (v) {
+                        if (v == 'delete') _deleteCurrentPost();
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('删除文章'),
+                        ),
+                      ],
                     ),
                     IconButton(
                       onPressed: _toggleFind,
@@ -703,107 +721,115 @@ class _EditorPageState extends State<EditorPage> {
       ),
     );
   }
-
-  /// 文章信息面板：草稿开关
+/// 文章信息面板
+  ///
+  /// 可改：草稿状态、日期、分类、标签、简介。
+  /// 这些全部是 Front Matter 字段，改完立即写回文件。
   void _showMetaSheet() {
-    final c = context.appColors;
+    final doc = _original;
+
+    if (doc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('这篇文章还没有加载完成，稍后再试')),
+      );
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) {
-        var draft = _original?.draft ?? true;
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpace.md,
-                  AppSpace.xs,
-                  AppSpace.md,
-                  AppSpace.md,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '文章信息',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: c.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpace.md),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: draft,
-                      title: const Text('草稿'),
-                      subtitle: Text(
-                        draft ? 'Hugo 构建时不会输出这篇' : '已发布，构建时会输出',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: c.textTertiary,
-                        ),
-                      ),
-                      onChanged: (v) {
-                        setSheet(() => draft = v);
-                        _applyDraft(v);
-                      },
-                    ),
-                    const SizedBox(height: AppSpace.xs),
-                    if (_original != null) ...[
-                      Text(
-                        '文件：${_original!.relativePath}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.6,
-                          color: c.textTertiary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '格式：${_original!.format.toUpperCase()}'
-                        '${_original!.dateLabel.isEmpty ? "" : " · ${_original!.dateLabel}"}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.6,
-                          color: c.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+        return _MetaSheet(
+          doc: doc,
+          allCategories: widget.controller?.allCategories ?? const [],
+          allTags: widget.controller?.allTags ?? const [],
+          onSave: (draft, date, categories, tags, description) async {
+            final path = widget.relativePath;
+            final ctrl = widget.controller;
+            if (path == null || ctrl == null) return false;
+
+            final result = await ctrl.savePost(
+              relativePath: path,
+              title: _titleCtrl.text,
+              body: _bodyCtrl.text,
+              original: _original,
+              draft: draft,
+              date: date,
+              categories: categories,
+              tags: tags,
+              description: description,
             );
+            if (!result.ok) {
+              if (mounted) {
+                setState(() {
+                  _saveState = _SaveState.failed;
+                  _saveError = result.message;
+                });
+              }
+              return false;
+            }
+            final fresh = await ctrl.readPost(path);
+            if (fresh != null && mounted) {
+              setState(() {
+                _original = fresh;
+                _saveState = _SaveState.saved;
+              });
+            }
+            return true;
           },
         );
       },
     );
   }
 
-  void _applyDraft(bool draft) {
-    final doc = _original;
-    if (doc == null) return;
-    setState(() {
-      _original = PostDocument(
-        relativePath: doc.relativePath,
-        fileName: doc.fileName,
-        title: doc.title,
-        frontMatter: doc.frontMatter,
-        body: doc.body,
-        rawFrontMatter: doc.rawFrontMatter,
-        format: doc.format,
-        date: doc.date,
-        draft: draft,
-        categories: doc.categories,
-        tags: doc.tags,
-        description: doc.description,
-        slug: doc.slug,
-        weight: doc.weight,
+  /// 补录到列表页：删除当前文章
+  Future<void> _deleteCurrentPost() async {
+    final path = widget.relativePath;
+    final ctrl = widget.controller;
+    if (path == null || ctrl == null) return;
+    final c = context.appColors;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除这篇文章？'),
+        content: Text(
+          '文件将被永久删除：\n$path\n\n'
+          '这是本地文件删除，Git 仓库里的历史记录不受影响。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: c.danger),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    // 删除前把待保存的改动取消掉，否则 dispose 时会把文件又写回来
+    _saveTimer?.cancel();
+    _saveState = _SaveState.idle;
+
+    final deleted = await ctrl.deletePost(path);
+    if (!mounted) return;
+
+    if (deleted) {
+      _deleted = true;
+      Navigator.of(context).maybePop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('文章已删除')),
       );
-      _saveState = _SaveState.dirty;
-    });
-    _save();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：${ctrl.error ?? "未知错误"}')),
+      );
+    }
   }
 }
 
@@ -964,6 +990,403 @@ class _FindBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── 文章信息编辑面板 ──────────────────────────────────
+
+/// 编辑 Front Matter 里的元信息。
+///
+/// 为什么做成一整张表单而不是「点一项改一项」：
+/// 元信息通常是一起调的（改日期顺便改草稿状态），分开点会关掉又打开好几次。
+class _MetaSheet extends StatefulWidget {
+  const _MetaSheet({
+    required this.doc,
+    required this.allCategories,
+    required this.allTags,
+    required this.onSave,
+  });
+
+  final PostDocument doc;
+  final List<String> allCategories;
+  final List<String> allTags;
+
+  /// 返回 true 表示写入成功
+  final Future<bool> Function(
+    bool draft,
+    DateTime? date,
+    List<String> categories,
+    List<String> tags,
+    String description,
+  ) onSave;
+
+  @override
+  State<_MetaSheet> createState() => _MetaSheetState();
+}
+
+class _MetaSheetState extends State<_MetaSheet> {
+  late bool _draft = widget.doc.draft;
+  late DateTime? _date = widget.doc.date;
+  late List<String> _categories = [...widget.doc.categories];
+  late List<String> _tags = [...widget.doc.tags];
+  late final TextEditingController _descCtrl =
+      TextEditingController(text: widget.doc.description);
+
+  final _catCtrl = TextEditingController();
+  final _tagCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _descCtrl.dispose();
+    _catCtrl.dispose();
+    _tagCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.md,
+            AppSpace.sm,
+            AppSpace.md,
+            AppSpace.md,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '文章信息',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _saving ? null : _submit,
+                    child: Text(_saving ? '保存中…' : '保存'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpace.xs),
+
+              // 草稿
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _draft,
+                title: const Text('草稿'),
+                subtitle: Text(
+                  _draft ? 'Hugo 构建时不会输出这篇' : '已发布，构建时会输出',
+                  style: TextStyle(fontSize: 12, color: c.textTertiary),
+                ),
+                onChanged: (v) => setState(() => _draft = v),
+              ),
+
+              const SizedBox(height: AppSpace.xs),
+              _label('发布日期', c),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: _pickDate,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.event_outlined,
+                        size: 16,
+                        color: c.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _date == null ? '未设置（保存时自动填今天）' : _fmt(_date!),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _date == null ? c.textTertiary : c.textPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_date != null)
+                        GestureDetector(
+                          onTap: () => setState(() => _date = null),
+                          child: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: c.textTertiary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppSpace.md),
+              _label('分类', c),
+              const SizedBox(height: 6),
+              _ChipsEditor(
+                values: _categories,
+                allValues: widget.allCategories,
+                hint: '添加分类，回车确认',
+                controller: _catCtrl,
+                onChanged: (v) => setState(() => _categories = v),
+              ),
+
+              const SizedBox(height: AppSpace.md),
+              _label('标签', c),
+              const SizedBox(height: 6),
+              _ChipsEditor(
+                values: _tags,
+                allValues: widget.allTags,
+                hint: '添加标签，回车确认',
+                controller: _tagCtrl,
+                onChanged: (v) => setState(() => _tags = v),
+              ),
+
+              const SizedBox(height: AppSpace.md),
+              _label('简介（description）', c),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _descCtrl,
+                maxLines: 3,
+                minLines: 2,
+                style: const TextStyle(fontSize: 13, height: 1.5),
+                decoration: InputDecoration(
+                  hintText: '留空则用正文开头做摘要',
+                  hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
+                  filled: true,
+                  fillColor: c.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+
+              const SizedBox(height: AppSpace.md),
+              Text(
+                '文件：${widget.doc.relativePath}',
+                style: TextStyle(fontSize: 11, height: 1.6, color: c.textTertiary),
+              ),
+              Text(
+                '格式：${widget.doc.format.toUpperCase()}',
+                style: TextStyle(fontSize: 11, height: 1.6, color: c.textTertiary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String s, AppColors c) => Text(
+        s,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: c.textSecondary,
+        ),
+      );
+
+  String _fmt(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} '
+        '${two(d.hour)}:${two(d.minute)}';
+  }
+
+  Future<void> _pickDate() async {
+    final base = _date ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: '选择发布日期',
+    );
+    if (picked == null || !mounted) return;
+
+    // 日期选择器不回时间，这里补问一次？不 —— 保留原时分，
+    // 新日期则用当前时分，避免每次改日期都变成 00:00。
+    final now = DateTime.now();
+    setState(() {
+      _date = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _date?.hour ?? now.hour,
+        _date?.minute ?? now.minute,
+      );
+    });
+  }
+
+  Future<void> _submit() async {
+    // 把输入框里还没回车的分类标签也带上，否则用户敲完直接点保存会丢
+    _commitPending(_catCtrl, _categories, (v) => _categories = v);
+    _commitPending(_tagCtrl, _tags, (v) => _tags = v);
+
+    setState(() => _saving = true);
+    final ok = await widget.onSave(
+      _draft,
+      _date,
+      _categories,
+      _tags,
+      _descCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (ok) {
+      Navigator.of(context).maybePop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('文章信息已保存')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('保存失败，请查看底部状态')),
+      );
+    }
+  }
+
+  void _commitPending(
+    TextEditingController ctrl,
+    List<String> target,
+    void Function(List<String>) assign,
+  ) {
+    final v = ctrl.text.trim();
+    if (v.isEmpty) return;
+    if (!target.contains(v)) assign([...target, v]);
+    ctrl.clear();
+  }
+}
+
+/// 可增删的 chip 列表 + 输入框
+class _ChipsEditor extends StatelessWidget {
+  const _ChipsEditor({
+    required this.values,
+    required this.allValues,
+    required this.hint,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final List<String> values;
+  final List<String> allValues;
+  final String hint;
+  final TextEditingController controller;
+  final void Function(List<String>) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+
+    // 站点里已有、但当前文章未使用的候选值
+    final suggestions =
+        allValues.where((v) => !values.contains(v)).take(8).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (values.isNotEmpty)
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final v in values)
+                InputChip(
+                  label: Text(v, style: const TextStyle(fontSize: 12)),
+                  onDeleted: () =>
+                      onChanged(values.where((e) => e != v).toList()),
+                  deleteIcon: const Icon(Icons.close, size: 14),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+            ],
+          ),
+        if (values.isNotEmpty) const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          style: const TextStyle(fontSize: 13),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) {
+            final t = v.trim();
+            if (t.isEmpty) return;
+            if (!values.contains(t)) onChanged([...values, t]);
+            controller.clear();
+          },
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
+            isDense: true,
+            filled: true,
+            fillColor: c.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.add, size: 18),
+              onPressed: () {
+                final t = controller.text.trim();
+                if (t.isEmpty) return;
+                if (!values.contains(t)) onChanged([...values, t]);
+                controller.clear();
+              },
+            ),
+          ),
+        ),
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final v in suggestions)
+                GestureDetector(
+                  onTap: () => onChanged([...values, v]),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(color: c.divider),
+                    ),
+                    child: Text(
+                      '+ $v',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: c.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

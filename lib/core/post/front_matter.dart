@@ -460,8 +460,13 @@ class FrontMatter {
 class FrontMatterBuilder {
   FrontMatterBuilder._();
 
-  /// 这些键由编辑器接管，序列化时以传入值为准
-  static const _managedKeys = {
+  /// 由编辑器接管的键，序列化时以传入值为准
+  ///
+  /// 保留这个清单是为了**文档化**「哪些字段属于编辑器」，
+  /// 但实际是否覆盖由 [build] 里的 `overridden` 动态判断 ——
+  /// 因为「接管」必须以调用方真的提供了新值为前提，
+  /// 否则会静默丢掉用户手写的字段。
+  static const managedKeys = {
     'title',
     'date',
     'draft',
@@ -492,10 +497,29 @@ class FrontMatterBuilder {
     String? slug,
     int? weight,
   }) {
-    // 1) 以原始 Front Matter 为底，剔除被接管的键
+    // 1) 以原始 Front Matter 为底。
+    //
+    // 这里有个关键细节：不能无脑剔除所有 _managedKeys。
+    // 如果调用方没传某个字段（比如保存正文时没传 weight），
+    // 而这里又把原始 map 里的 weight 剔掉了，那个字段就**永久丢失**——
+    // 用户只是改了个分类，文章的排序权重就被抹掉了。
+    //
+    // 所以规则是：**只有调用方真的提供新值，才由新值接管；
+    // 没提供就原样保留原值。**
+    final overridden = <String>{
+      'title', // 总是由调用方决定
+      if (date != null) ...{'date', 'publishDate', 'pubDate'},
+      if (draft != null) 'draft',
+      if (categories != null) ...{'categories', 'category'},
+      if (tags != null) ...{'tags', 'tag'},
+      if (description != null) ...{'description', 'summary'},
+      if (slug != null) 'slug',
+      if (weight != null) 'weight',
+    };
+
     final merged = <String, Object?>{};
     original.forEach((k, v) {
-      if (_managedKeys.contains(k)) return;
+      if (overridden.contains(k)) return;
       merged[k] = v;
     });
 

@@ -250,4 +250,125 @@ x
       expect(text.contains('2024-05-01 08:03:09'), isTrue);
     });
   });
+
+  group('编辑元信息不丢字段', () {
+    const original = '''
+title: 原标题
+date: 2024-05-01 08:03:09
+draft: true
+categories: [技术]
+tags: [flutter, hugo]
+description: 原简介
+author: 张三
+series: 深入 Flutter
+weight: 3
+''';
+
+    // 注意：这个辅助函数只用于**解析手写的原始 FM 文本**。
+    // FrontMatterBuilder.build() 返回的是「带 --- 分隔符的完整文件」，
+    // 不能塞进这里，否则会二次包裹导致解析失败。
+    Map<String, Object?> parseRaw(String text) => FrontMatter.parse(
+          relativePath: 'content/posts/a.md',
+          fileName: 'a.md',
+          content: '---\n$text---\n\n正文',
+        ).frontMatter;
+
+    /// 解析 build() 的输出（已是完整文件内容）
+    Map<String, Object?> parseBuilt(String fullFile) => FrontMatter.parse(
+          relativePath: 'content/posts/a.md',
+          fileName: 'a.md',
+          content: fullFile,
+        ).frontMatter;
+
+    test('改分类和标签后，author / series / weight 仍在', () {
+      final fm = parseRaw(original);
+      final out = FrontMatterBuilder.build(
+        original: fm,
+        format: 'yaml',
+        title: '原标题',
+        body: '正文',
+        categories: ['生活'],
+        tags: ['随笔'],
+      );
+      final again = parseBuilt(out);
+      expect(again['author'], '张三');
+      expect(again['series'], '深入 Flutter');
+      expect(again['weight'], 3);
+      expect(again['categories'], ['生活']);
+      expect(again['tags'], ['随笔']);
+    });
+
+    test('改日期后写回新日期，旧日期不残留', () {
+      final fm = parseRaw(original);
+      final out = FrontMatterBuilder.build(
+        original: fm,
+        format: 'yaml',
+        title: '原标题',
+        body: '正文',
+        date: DateTime(2025, 1, 2, 3, 4, 5),
+      );
+      expect(out.contains('2025-01-02 03:04:05'), isTrue);
+      expect(out.contains('2024-05-01'), isFalse);
+    });
+
+    test('简介传空串时删除 description 键', () {
+      final fm = parseRaw(original);
+      final out = FrontMatterBuilder.build(
+        original: fm,
+        format: 'yaml',
+        title: '原标题',
+        body: '正文',
+        description: '',
+      );
+      final again = parseBuilt(out);
+      expect(again.containsKey('description'), isFalse);
+    });
+
+    test('草稿开关切换后状态正确', () {
+      final fm = parseRaw(original);
+      final out = FrontMatterBuilder.build(
+        original: fm,
+        format: 'yaml',
+        title: '原标题',
+        body: '正文',
+        draft: false,
+      );
+      expect(parseBuilt(out)['draft'], isFalse);
+    });
+
+    test('清空分类时不写空数组，而是去掉该键', () {
+      final fm = parseRaw(original);
+      final out = FrontMatterBuilder.build(
+        original: fm,
+        format: 'yaml',
+        title: '原标题',
+        body: '正文',
+        categories: const [],
+      );
+      expect(parseBuilt(out).containsKey('categories'), isFalse);
+    });
+
+    test('TOML 格式同样能保留自定义字段', () {
+      const toml = '''
+title = "原标题"
+draft = true
+categories = ["技术"]
+author = "张三"
+''';
+      final doc = FrontMatter.parse(
+        relativePath: 'content/posts/a.md',
+        fileName: 'a.md',
+        content: '+++\n$toml+++\n\n正文',
+      );
+      final out = FrontMatterBuilder.build(
+        original: doc.frontMatter,
+        format: 'toml',
+        title: '原标题',
+        body: '正文',
+        draft: false,
+      );
+      expect(out.startsWith('+++'), isTrue);
+      expect(out.contains('author = "张三"'), isTrue);
+    });
+  });
 }
