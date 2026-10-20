@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../fs/site_storage.dart';
 import '../post/front_matter.dart';
 import '../settings/app_settings.dart';
+import 'file_naming.dart';
 import 'commit_message.dart';
 import 'git_change.dart';
 import 'git_service.dart';
@@ -789,53 +790,11 @@ class SiteController extends ChangeNotifier {
 
   /// 按设置的命名规则生成文件名主干（不含扩展名）。
   ///
-  /// 三种规则：
-  /// - fromTitle：标题转 slug，中文标题用时间戳兜底
-  /// - timestamp：post-20240501-080309
-  /// - dateAndTitle：20240501-hello（中文标题则退化为纯日期）
-  String _buildFileSlug(String title) {
-    final style = settings?.fileNameStyle ?? FileNameStyle.fromTitle;
-    final now = DateTime.now();
-    String two(int v) => v.toString().padLeft(2, '0');
-    final datePart = '${now.year}${two(now.month)}${two(now.day)}';
-    final timePart = '${two(now.hour)}${two(now.minute)}${two(now.second)}';
-
-    switch (style) {
-      case FileNameStyle.timestamp:
-        return 'post-$datePart-$timePart';
-      case FileNameStyle.dateAndTitle:
-        // 标题能转成 ASCII slug 就用，否则只剩日期，避免出现 `20240501-.md`
-        final s = _asSlug(title);
-        return s.isEmpty ? datePart : '$datePart-$s';
-      case FileNameStyle.fromTitle:
-        return _slugify(title);
-    }
-  }
-
-  /// 标题 -> 纯 ASCII slug；失败返回空串（不兜底）
-  String _asSlug(String title) {
-    return title
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s-]'), '')
-        .replaceAll(RegExp(r'[\s_]+'), '-')
-        .replaceAll(RegExp(r'-+'), '-')
-        .replaceAll(RegExp(r'^-|-$'), '');
-  }
-
-  /// 标题转 slug。
-  ///
-  /// 中文标题不能直接当文件名（Hugo 能认，但 URL 会变成百分号编码），
-  /// 所以取「ASCII 化失败就用时间戳」的策略，保证文件名总是合法的。
-  String _slugify(String title) {
-    final s = _asSlug(title);
-    if (s.isNotEmpty) return s;
-    // 纯中文标题：用时间戳兜底，避免出现空文件名
-    final now = DateTime.now();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return 'post-${now.year}${two(now.month)}${two(now.day)}'
-        '-${two(now.hour)}${two(now.minute)}${two(now.second)}';
-  }
+  /// 真正的实现在 [file_naming.dart]，那里可以脱离原生库单独测试。
+  String _buildFileSlug(String title) => buildFileSlug(
+        title: title,
+        style: settings?.fileNameStyle ?? FileNameStyle.fromTitle,
+      );
 
   @override
   void dispose() {

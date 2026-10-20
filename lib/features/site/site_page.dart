@@ -6,15 +6,26 @@ import '../../core/site/git_service.dart';
 import '../../core/site/site_config.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
+import '../push/push_page.dart';
 import 'connect_site_page.dart';
 
 /// 站点页：当前站点信息 + Git 状态 + 发布入口。
 ///
 /// 四种形态：未接入（引导）/ 克隆中（进度）/ 失败（报错+重试）/ 已就绪（信息卡）
 class SitePage extends StatefulWidget {
-  const SitePage({super.key, required this.controller});
+  const SitePage({super.key, required this.controller, this.visibleWhen});
 
   final SiteController controller;
+
+  /// 当前选中的 Tab 序号。
+  ///
+  /// 外层用的是 IndexedStack（切 Tab 不重建、保活），所以 `initState`
+  /// 只会跑一次。不加这个通知的话，从这里去别处改了文章再切回来，
+  /// 文章数和 Git 状态全是旧的 —— 用户会以为「站点页不更新」。
+  final ValueNotifier<int>? visibleWhen;
+
+  /// 本页在 [visibleWhen] 里的序号
+  static const tabIndex = 3;
 
   @override
   State<SitePage> createState() => _SitePageState();
@@ -27,13 +38,23 @@ class _SitePageState extends State<SitePage> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
+    widget.visibleWhen?.addListener(_onTabChanged);
     _refreshStatus();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
+    widget.visibleWhen?.removeListener(_onTabChanged);
     super.dispose();
+  }
+
+  /// 切回本 Tab 时重新读一遍文件列表和 git 状态
+  void _onTabChanged() {
+    if (!mounted) return;
+    if (widget.visibleWhen?.value != SitePage.tabIndex) return;
+    _refreshStatus();
+    widget.controller.refresh();
   }
 
   void _onChanged() {
@@ -63,6 +84,18 @@ class _SitePageState extends State<SitePage> {
       setState(() {});
       _refreshStatus();
     }
+  }
+  /// 打开推送页。与「文章」页的云上传按钮走同一个入口。
+  Future<void> _openPush() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PushPage(controller: widget.controller),
+      ),
+    );
+    if (!mounted) return;
+    // 推送回来可能产生新 commit / 变更清空，刷新一次状态
+    setState(() {});
+    _refreshStatus();
   }
 
   Future<void> _confirmDisconnect() async {
@@ -112,6 +145,7 @@ class _SitePageState extends State<SitePage> {
               posts: c.posts,
               onReconnect: _openConnect,
               onDisconnect: _confirmDisconnect,
+              onPublish: _openPush,
             ),
           ),
       },
@@ -405,6 +439,7 @@ class _ReadyView extends StatelessWidget {
     required this.posts,
     required this.onReconnect,
     required this.onDisconnect,
+    required this.onPublish,
   });
 
   final SiteConfig config;
@@ -412,6 +447,17 @@ class _ReadyView extends StatelessWidget {
   final List<PostDocument> posts;
   final VoidCallback onReconnect;
   final VoidCallback onDisconnect;
+  final VoidCallback onPublish;
+
+  /// 站点页最多展示的文章条数。
+  ///
+  /// 站点页是「概览」而不是文章管理器 —— 全部铺开会让这一页长得离谱，
+  /// 想看全量请去「文章」Tab。这里只给个最近更新的印象。
+  static const maxPostsShown = 5;
+
+  /// 已排序的 posts 取前 N 条（posts 进来前已按日期倒序）
+  List<PostDocument> get shownPosts =>
+      posts.length <= maxPostsShown ? posts : posts.sublist(0, maxPostsShown);
 
   @override
   Widget build(BuildContext context) {
@@ -475,22 +521,15 @@ class _ReadyView extends StatelessWidget {
             children: [
               SizedBox(
                 width: double.infinity,
-                child: FilledButton(
-                  onPressed: null,
-                  child: const Text('提交并推送'),
-                ),
-              ),
-              const SizedBox(height: AppSpace.xs),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: null,
-                  child: const Text('触发 Vercel 部署'),
+                child: FilledButton.icon(
+                  onPressed: onPublish,
+                  icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                  label: const Text('提交并推送'),
                 ),
               ),
               const SizedBox(height: AppSpace.xs),
               Text(
-                '发布功能在 M4 开放',
+                '推送后由 GitHub 监听仓库自动部署，App 不直接触发构建。',
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
@@ -503,7 +542,9 @@ class _ReadyView extends StatelessWidget {
 
         if (posts.isNotEmpty) ...[
           SectionHeader('文章 · ${posts.length}'),
-          for (var i = 0; i < posts.length; i++) ...[
+          // 只显示最近几篇。站点页是个概览，不是文章列表页 ——
+          // 全部铺开会把「站点管理」挤到很远，滚动几十屏才能解绑。
+          for (var i = 0; i < shownPosts.length; i++) ...[
             if (i > 0) const IndentedDivider(),
             ListTile(
               dense: true,
@@ -513,7 +554,7 @@ class _ReadyView extends StatelessWidget {
                 color: c.textTertiary,
               ),
               title: Text(
-                posts[i].title,
+                shownPosts[i].title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -522,16 +563,44 @@ class _ReadyView extends StatelessWidget {
                   color: c.textPrimary,
                 ),
               ),
+              // 这里曾经写成 '${config.postsDir}/${posts[i]}' ——
+              // posts[i] 是 PostDocument 实例，直接插值只会打出
+              // "Instance of 'PostDocument'"。要用 relativePath。
               subtitle: Text(
-                '${config.postsDir}/${posts[i]}',
+                shownPosts[i].relativePath,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
                   height: 1.5,
                   color: c.textTertiary,
                 ),
               ),
+              trailing: shownPosts[i].draft
+                  ? Text(
+                      '草稿',
+                      style: TextStyle(fontSize: 11, color: c.textTertiary),
+                    )
+                  : null,
             ),
           ],
+          if (posts.length > shownPosts.length)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                AppSpace.xs,
+                AppSpace.md,
+                AppSpace.xs,
+              ),
+              child: Text(
+                '还有 ${posts.length - shownPosts.length} 篇，在「文章」页查看全部',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: c.textTertiary,
+                ),
+              ),
+            ),
         ],
 
         const SectionHeader('站点管理'),

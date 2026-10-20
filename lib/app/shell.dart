@@ -36,6 +36,19 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
+  /// 当前选中的 Tab 序号。
+  ///
+  /// 用 IndexedStack 保活意味着页面只会 initState 一次，
+  /// 需要「切回来时刷新」的页面得能感知自己被切到了，
+  /// 所以把索引做成 ValueNotifier 传下去。
+  final _tabIndex = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _tabIndex.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
@@ -47,7 +60,10 @@ class _AppShellState extends State<AppShell> {
           PostsPage(siteController: widget.siteController),
           NotesPage(controller: widget.noteController),
           const ChatPage(),
-          SitePage(controller: widget.siteController),
+          SitePage(
+            controller: widget.siteController,
+            visibleWhen: _tabIndex,
+          ),
           SettingsPage(
             themeMode: widget.themeMode,
             onThemeModeChanged: widget.onThemeModeChanged,
@@ -63,7 +79,10 @@ class _AppShellState extends State<AppShell> {
         ),
         child: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          onDestinationSelected: (i) {
+            setState(() => _index = i);
+            _tabIndex.value = i;
+          },
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.article_outlined),
