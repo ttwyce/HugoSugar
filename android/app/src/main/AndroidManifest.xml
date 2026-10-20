@@ -1,4 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 网络权限：clone / push / 拉取仓库列表都依赖它。
+         注意必须写在 main manifest 里 —— 只写在 src/debug 的话，
+         release 包会完全没有网络权限，表现为「仓库不存在」。 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 用于在网络不稳定时提示用户当前网络状态 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="HugoSugar"
         android:name="${applicationName}"

@@ -99,6 +99,7 @@ class _SitePageState extends State<SitePage> {
             progress: c.progress,
           ),
         SiteStage.failed => _FailedView(
+            failure: c.failure,
             error: c.error ?? '未知错误',
             onRetry: _openConnect,
           ),
@@ -234,53 +235,157 @@ class _CloningView extends StatelessWidget {
 // ── 失败 ───────────────────────────────────────────────
 
 class _FailedView extends StatelessWidget {
-  const _FailedView({required this.error, required this.onRetry});
+  const _FailedView({
+    required this.failure,
+    required this.error,
+    required this.onRetry,
+  });
 
+  final CloneFailure? failure;
   final String error;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpace.xxl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final f = failure;
+    final title = f?.title ?? '接入失败';
+    final detail = f?.detail ?? error;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.md,
+        AppSpace.xl,
+        AppSpace.md,
+        AppSpace.xxl,
+      ),
+      children: [
+        Center(
+          child: Icon(
+            _iconFor(f?.kind),
+            size: 40,
+            color: c.danger,
+          ),
+        ),
+        const SizedBox(height: AppSpace.md),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 16,
+            height: 1.4,
+            fontWeight: FontWeight.w600,
+            color: c.textPrimary,
+          ),
+        ),
+        const SizedBox(height: AppSpace.sm),
+        Container(
+          padding: const EdgeInsets.all(AppSpace.sm),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Text(
+            detail,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.7,
+              color: c.textSecondary,
+            ),
+          ),
+        ),
+
+        // 原始错误：默认折叠，排查时再展开
+        if (f?.raw != null && f!.raw!.isNotEmpty) ...[
+          const SizedBox(height: AppSpace.sm),
+          _RawErrorTile(raw: f.raw!),
+        ],
+
+        const SizedBox(height: AppSpace.xl),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onRetry,
+            child: Text(f == null ? '重新接入' : '换个仓库重试'),
+          ),
+        ),
+        const SizedBox(height: AppSpace.xs),
+        Text(
+          '提示：如果是偶发失败，直接重试通常就能成功。',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.6,
+            color: c.textTertiary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _iconFor(CloneFailureKind? kind) {
+    switch (kind) {
+      case CloneFailureKind.badToken:
+        return Icons.key_off_outlined;
+      case CloneFailureKind.noAccess:
+        return Icons.lock_outline;
+      case CloneFailureKind.repoMissing:
+        return Icons.folder_off_outlined;
+      case CloneFailureKind.network:
+        return Icons.wifi_off_outlined;
+      case CloneFailureKind.unknown:
+      case null:
+        return Icons.error_outline;
+    }
+  }
+}
+
+/// 折叠的原始错误，方便排查又不干扰阅读
+class _RawErrorTile extends StatelessWidget {
+  const _RawErrorTile({required this.raw});
+
+  final String raw;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Theme(
+        // 去掉 ExpansionTile 展开时的分隔线
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpace.sm,
+            0,
+            AppSpace.sm,
+            AppSpace.sm,
+          ),
+          leading: Icon(Icons.bug_report_outlined,
+              size: 16, color: c.textTertiary),
+          title: Text(
+            '原始错误信息',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              color: c.textTertiary,
+            ),
+          ),
           children: [
-            Icon(Icons.error_outline, size: 40, color: c.danger),
-            const SizedBox(height: AppSpace.md),
-            Text(
-              '接入失败',
-              style: TextStyle(
-                fontSize: 16,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-                color: c.textPrimary,
-              ),
-            ),
-            const SizedBox(height: AppSpace.xs),
-            Container(
-              padding: const EdgeInsets.all(AppSpace.sm),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Text(
-                error,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.6,
-                  color: c.textSecondary,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpace.xl),
             SizedBox(
               width: double.infinity,
-              child: FilledButton(
-                onPressed: onRetry,
-                child: const Text('重新接入'),
+              child: SelectableText(
+                raw,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.6,
+                  fontFamily: 'monospace',
+                  color: c.textSecondary,
+                ),
               ),
             ),
           ],
