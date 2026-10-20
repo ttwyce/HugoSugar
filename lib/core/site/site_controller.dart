@@ -72,6 +72,19 @@ class SiteController extends ChangeNotifier {
   static const _configFileName = 'site.json';
   static const _storageId = 'default';
 
+  /// 站点配置文件路径。
+  ///
+  /// **必须放在仓库目录之外。**
+  /// 早先写成 `p.join(_storage.root.path, 'site.json')`，而 storage.root 就是
+  /// 克隆下来的仓库根 —— 结果这个文件成了工作区里的未跟踪文件，
+  /// `git addAll(['*'])` 会把它当成文章一起提交到用户的 GitHub 仓库，
+  /// 而且 lastSyncedAt 每次变动都会产生无意义的 diff。
+  ///
+  /// 现在放到站点目录的同级：`<appSupport>/sites/default.json`，
+  /// 既在仓库外，命名又能和站点 id 对上。
+  File _configFileFor(SiteStorage storage) =>
+      File(p.join(storage.root.parent.path, '$_storageId.json'));
+
   final GitHubApi _api;
 
   SiteStage _stage = SiteStage.empty;
@@ -127,7 +140,21 @@ class SiteController extends ChangeNotifier {
   Future<void> load() async {
     try {
       _storage = await AppPrivateStorage.open(_storageId);
-      final cfgFile = File(p.join(_storage!.root.path, _configFileName));
+      final cfgFile = _configFileFor(_storage!);
+
+      // 兼容旧版本：配置曾误写在仓库目录里（<repo>/site.json）。
+      // 读到就搬到外面并删掉旧文件，避免它继续被 git 视为未跟踪文件
+      // 并随下一次推送提交上去。
+      final legacy = File(p.join(_storage!.root.path, _configFileName));
+      if (!await cfgFile.exists() && await legacy.exists()) {
+        await legacy.copy(cfgFile.path);
+        try {
+          await legacy.delete();
+        } catch (_) {
+          // 删不掉也不影响；push 时还有一层排除
+        }
+      }
+
       if (!await cfgFile.exists()) {
         _stage = SiteStage.empty;
         notifyListeners();
@@ -225,7 +252,7 @@ class SiteController extends ChangeNotifier {
         lastSyncedAt: DateTime.now(),
       );
 
-      await File(p.join(target, _configFileName))
+      await _configFileFor(_storage!)
           .writeAsString(jsonEncode(_config!.toJson()));
 
       await _refreshPosts();
@@ -730,7 +757,7 @@ class SiteController extends ChangeNotifier {
     final updated = cfg.copyWith(lastSyncedAt: DateTime.now());
     _config = updated;
     try {
-      await File(p.join(storage.root.path, _configFileName))
+      await _configFileFor(storage)
           .writeAsString(jsonEncode(updated.toJson()), flush: true);
     } catch (_) {
       // 时间戳写不进去不影响使用

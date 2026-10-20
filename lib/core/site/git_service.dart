@@ -264,6 +264,11 @@ class GitService {
         final flags = entry.value;
         if (flags.contains(GitStatus.ignored)) continue;
 
+        // App 自己的状态文件不该出现在「待推送变更」里。
+        // 用户看到会困惑（"这是什么？我要不要提交它？"），而它确实
+        // 也不属于站点内容。旧版本残留的副本一并在这里隐藏。
+        if (path == 'site.json') continue;
+
         final change = _classify(path, flags);
         if (change != null) out.add(change);
       }
@@ -349,7 +354,11 @@ class GitService {
       // 1) 全部加入暂存区
       final index = repo.index;
       try {
-        index.addAll(['*']);
+        // 显式排除 App 自己的状态文件。
+        // 正常情况下 site.json 已经不在仓库目录里了（见 SiteController
+        // ._configFileFor），但旧版本克隆的仓库可能还残留一份，
+        // 这里兜底，避免它被 addAll 带进用户的提交。
+        index.addAll(['*', ':(exclude)site.json']);
         if (index.hasConflicts) {
           throw GitOperationError(
             step: 'commit',
