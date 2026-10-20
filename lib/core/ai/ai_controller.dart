@@ -160,9 +160,11 @@ class AiController extends ChangeNotifier {
   }
 
   Future<void> setActiveEndpoint(String id) async {
+    if (_busy) return;
     if (_config.activeId == id) return;
     _config = _config.copyWith(activeId: id);
     await _endpointStore?.save(_config);
+    await _syncSessionEndpoint();
     notifyListeners();
   }
 
@@ -172,7 +174,87 @@ class AiController extends ChangeNotifier {
         .toList();
     _config = _config.copyWith(endpoints: list);
     await _endpointStore?.save(_config);
+    await _syncSessionEndpoint();
     notifyListeners();
+  }
+
+  /// 对话页的快速切换：一次调用同时可换端点、换模型。
+  ///
+  /// 为什么不复用 [setActiveEndpoint] + [setEndpointModel] 两次调用：
+  /// 中间会各写一次磁盘、各 notify 一次，UI 会闪两下；
+  /// 更重要的是「改端点」和「改模型」必须原子生效，
+  /// 否则中途有一瞬间是「新端点 + 旧模型名」这种非法组合。
+  ///
+  /// [endpointId] 为空 / [model] 为空时表示不改该项。
+  /// 发送中拒绝切换：正在跑的请求已经带着旧端点飞出，
+  /// 中途换会让会话记录与实际请求对不上。
+  Future<bool> switchModel({String? endpointId, String? model}) async {
+    if (_busy) return false;
+
+    final targetId = (endpointId ?? '').trim().isEmpty
+        ? (_config.activeId.isEmpty
+            ? (activeEndpoint?.id ?? '')
+            : _config.activeId)
+        : endpointId!.trim();
+    if (targetId.isEmpty) return false;
+
+    var cfg = _config;
+    if (cfg.activeId != targetId) {
+      cfg = cfg.copyWith(activeId: targetId);
+    }
+
+    final newModel = model?.trim() ?? '';
+    if (newModel.isNotEmpty) {
+      final list = cfg.endpoints
+          .map((e) => e.id == targetId ? e.copyWith(model: newModel) : e)
+          .toList();
+      cfg = cfg.copyWith(endpoints: list);
+    }
+
+    _config = cfg;
+    await _endpointStore?.save(_config);
+    await _syncSessionEndpoint();
+    notifyListeners();
+    return true;
+  }
+
+  /// 切换后把「这次对话用的是哪个端点/模型」同步进会话，
+  /// 历史记录里才能看出每条对话当时挂在什么模型上。
+  Future<void> _syncSessionEndpoint() async {
+    final s = _session;
+    if (s == null) return;
+    final ep = activeEndpoint;
+    if (ep == null) return;
+    if (s.endpointId == ep.id && s.model == ep.model) return;
+    _session = s.copyWith(endpointId: ep.id, model: ep.model);
+    await _chatStore?.save(_session!);
+  }
+
+  /// 某个端点的模型列表缓存（端点 id → 模型 id 列表）。
+  ///
+  /// 快速切换面板每次打开都去拉一次 `/models` 太慢（几百毫秒起步），
+  /// 而模型清单基本不变。缓存后第二次打开是瞬时的，
+  /// 用户想刷新时再显式点「刷新」。
+  final Map<String, List<String>> _modelCache = {};
+
+  List<String>? cachedModels(String endpointId) => _modelCache[endpointId];
+
+  /// 拉取并缓存某端点的模型列表。失败时抛出 [AiException]。
+  Future<List<String>> loadModels(String endpointId) async {
+    AiEndpoint? ep;
+    for (final e in _config.endpoints) {
+      if (e.id == endpointId) ep = e;
+    }
+    if (ep == null) return const [];
+
+    final key = await readKey(endpointId) ?? '';
+    final models = await _client.listModels(endpoint: ep, apiKey: key);
+    final ids = models
+        .where((m) => m.looksChatCapable)
+        .map((m) => m.id)
+        .toList();
+    _modelCache[endpointId] = ids;
+    return ids;
   }
 
   Future<String?> readKey(String endpointId) async =>
@@ -683,6 +765,12 @@ class AiController extends ChangeNotifier {
   @visibleForTesting
   void debugSetConfig(AiConfig cfg) {
     _config = cfg;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetBusy(bool v) {
+    _busy = v;
     notifyListeners();
   }
 

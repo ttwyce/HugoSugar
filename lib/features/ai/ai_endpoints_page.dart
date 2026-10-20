@@ -64,8 +64,11 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
                 return _EndpointCard(
                   endpoint: ep,
                   active: ep.id == cfg.activeId,
-                  onTap: () => _edit(ep),
-                  onSetActive: () => widget.controller.setActiveEndpoint(ep.id),
+                  // 点卡片 = 切换。这是最符合直觉的动作：
+                  // 列表页上点一行，就是把这一行「选中」。
+                  // 编辑挪到右侧菜单，避免「只想切换却打开了编辑面板」。
+                  onTap: () => widget.controller.setActiveEndpoint(ep.id),
+                  onEdit: () => _edit(ep),
                   onDelete: () => _confirmDelete(ep),
                 );
               },
@@ -186,26 +189,35 @@ class _EndpointCard extends StatelessWidget {
     required this.endpoint,
     required this.active,
     required this.onTap,
-    required this.onSetActive,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final AiEndpoint endpoint;
   final bool active;
   final VoidCallback onTap;
-  final VoidCallback onSetActive;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
     return Material(
-      color: c.surface,
+      // 当前项用浅强调色底 + 边框，让「哪一行是选中的」一眼可见；
+      // 之前只有一个小勾，滚动时很容易忽略。
+      color: active ? c.accentSoft : c.surface,
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: active ? c.accent.withValues(alpha: 0.5) : c.divider,
+              width: 1,
+            ),
+          ),
           padding: const EdgeInsets.all(AppSpace.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,7 +234,7 @@ class _EndpointCard extends StatelessWidget {
                       endpoint.name,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w600,
                         color: c.textPrimary,
                       ),
                     ),
@@ -230,16 +242,15 @@ class _EndpointCard extends StatelessWidget {
                   PopupMenuButton<String>(
                     icon: Icon(Icons.more_horiz, size: 18, color: c.textTertiary),
                     onSelected: (v) {
-                      if (v == 'active') onSetActive();
+                      if (v == 'edit') onEdit();
                       if (v == 'delete') onDelete();
                     },
-                    itemBuilder: (_) => [
-                      if (!active)
-                        const PopupMenuItem(
-                          value: 'active',
-                          child: Text('设为当前'),
-                        ),
-                      const PopupMenuItem(
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Text('编辑（地址 / Key / 模型）'),
+                      ),
+                      PopupMenuItem(
                         value: 'delete',
                         child: Text('删除'),
                       ),

@@ -5,6 +5,7 @@ import '../../core/ai/agent_runner.dart';
 import '../../core/ai/ai_controller.dart';
 import '../../core/ai/chat_store.dart';
 import 'ai_endpoints_page.dart';
+import 'model_switcher_sheet.dart';
 import 'write_approval_sheet.dart';
 import 'chat_markdown.dart';
 
@@ -57,13 +58,53 @@ class _ChatPageState extends State<ChatPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          ctrl.session?.title ?? 'AI',
-          style: const TextStyle(fontSize: 16),
+        // 标题区直接做成「端点 · 模型」的按钮：
+        // 换模型是高频操作，不该藏在二级页里。
+        title: InkWell(
+          onTap: ctrl.busy ? null : _openSwitcher,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        ctrl.session?.title ?? 'AI',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.expand_more,
+                      size: 15,
+                      color: context.appColors.textTertiary,
+                    ),
+                  ],
+                ),
+                // 第二行常显当前端点与模型，一眼知道自己在跟谁说话
+                Text(
+                  _modelLabel(ctrl),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: context.appColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         actions: [
           IconButton(
-            tooltip: '端点与模型',
+            tooltip: '端点管理',
             onPressed: _openEndpoints,
             icon: const Icon(Icons.smart_toy_outlined),
           ),
@@ -123,6 +164,15 @@ class _ChatPageState extends State<ChatPage> {
                     onDismiss: ctrl.clearError,
                   ),
                 _ContextBar(controller: ctrl, onTap: _openScope),
+                // 底部再来一个常驻的模型切换入口。
+                //
+                // 顶栏虽然也能点，但它在屏幕最上方，单手够不到；
+                // 输入框旁边才是拇指区，换模型后紧接着打字是最自然的流程。
+                _ModelBar(
+                  label: _modelLabel(ctrl),
+                  busy: ctrl.busy,
+                  onTap: _openSwitcher,
+                ),
                 _InputBar(
                   controller: _input,
                   busy: ctrl.busy,
@@ -193,6 +243,20 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openSwitcher() async {
+    if (widget.controller.busy) return;
+    await showModelSwitcher(context, widget.controller);
+    if (mounted) setState(() {});
+  }
+
+  /// AppBar 第二行文字：`端点 · 模型`
+  String _modelLabel(AiController ctrl) {
+    final ep = ctrl.activeEndpoint;
+    if (ep == null) return '未配置端点';
+    final model = ep.model.trim();
+    return model.isEmpty ? '${ep.name} · 未选模型' : '${ep.name} · $model';
   }
 
   Future<void> _openHistory() async {
@@ -628,6 +692,66 @@ class _StreamingBubble extends StatelessWidget {
         'fetch_url' => '正在抓取网页…',
         _ => '正在执行 $name…',
       };
+}
+
+/// 输入框上方：当前端点 · 模型，点击打开快速切换。
+class _ModelBar extends StatelessWidget {
+  const _ModelBar({
+    required this.label,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return InkWell(
+      // 生成中不允许切换：请求已经带着旧端点飞出去了，
+      // 中途换模型会让这一轮的记录和实际请求对不上。
+      onTap: busy ? null : onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.md,
+          vertical: 5,
+        ),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: c.divider, width: 1)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.bolt,
+              size: 12,
+              color: busy ? c.textTertiary : c.accent,
+            ),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(
+                busy ? '$label（生成中，暂不可切换）' : label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: busy ? c.textTertiary : c.textSecondary,
+                ),
+              ),
+            ),
+            Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
+            const SizedBox(width: 3),
+            Text(
+              '切换',
+              style: TextStyle(fontSize: 10, color: c.textTertiary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 输入框上方：显示本次会注入哪些想法
