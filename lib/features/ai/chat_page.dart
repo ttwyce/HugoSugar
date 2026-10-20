@@ -111,6 +111,16 @@ class _ChatPageState extends State<ChatPage> {
                           },
                         ),
                 ),
+                // 错误必须可见。
+                //
+                // 之前 AiController.lastError 只被赋值、从没被渲染，
+                // 所以「模型没选」「key 错了」「网络失败」这些情况
+                // 在界面上完全看不出来，用户只看到「发了没反应」。
+                if (ctrl.lastError != null && !ctrl.busy)
+                  _ErrorBar(
+                    message: ctrl.lastError!,
+                    onDismiss: ctrl.clearError,
+                  ),
                 _ContextBar(controller: ctrl, onTap: _openScope),
                 _InputBar(
                   controller: _input,
@@ -128,9 +138,24 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _send() async {
     final text = _input.text;
     if (text.trim().isEmpty) return;
+
+    // 先问一句「能不能发」，不能发就**不要清空输入框**。
+    //
+    // 之前是先 clear 再调 send，而 send 的前置检查失败时只往
+    // controller.lastError 写一行字、界面上不显示，结果就是
+    // 用户打的话凭空消失、又没有任何提示。
+    final reason = widget.controller.validateSend();
+    if (reason != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(reason)),
+      );
+      return;
+    }
+
     _input.clear();
 
-    await widget.controller.send(
+    final started = await widget.controller.send(
       text,
       onApproval: (req) async {
         if (!mounted) return ApprovalDecision.reject;
@@ -146,6 +171,13 @@ class _ChatPageState extends State<ChatPage> {
         return result ?? ApprovalDecision.reject;
       },
     );
+
+    // send 还有一道 validateSend 覆盖不到的检查：API Key 是异步读的。
+    // 没填 key 时 send 会早退、输入已经被 clear 掉了。
+    // 这里把话还给用户 —— 重新打一遍比什么都不剩好得多。
+    if (!started && mounted && _input.text.isEmpty) {
+      _input.text = text;
+    }
   }
 
   Future<void> _newChat() async {
@@ -343,7 +375,11 @@ class _EntryView extends StatelessWidget {
               ],
             )
           else
-            Flexible(child: _body(context, entry)),
+            // 这里不能用 Flexible：
+            // ListView 的 item 纵向无界，Column 里带 flex 的子项会抛
+            // "incoming height constraints are unbounded"，导致整条
+            // 消息画不出来（用户看到的现象就是「发的消息不显示」）。
+            _body(context, entry),
         ],
       ),
     );
@@ -652,6 +688,58 @@ class _ContextBar extends StatelessWidget {
             Icon(Icons.tune, size: 12, color: c.textTertiary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 一条可见的错误提示。
+///
+/// 存在的理由：`AiController.lastError` 之前只被赋值、从没被渲染，
+/// 所以模型配置不全、网络失败、key 错误这些情况在界面上完全看不出，
+/// 用户只能看到「发了没反应」。
+class _ErrorBar extends StatelessWidget {
+  const _ErrorBar({required this.message, required this.onDismiss});
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return Container(
+      width: double.infinity,
+      color: c.danger.withValues(alpha: 0.08),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.md,
+        6,
+        AppSpace.xs,
+        6,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(Icons.error_outline, size: 13, color: c.danger),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 11, height: 1.5, color: c.danger),
+            ),
+          ),
+          SizedBox(
+            width: 28,
+            height: 24,
+            child: InkWell(
+              onTap: onDismiss,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: Icon(Icons.close, size: 13, color: c.danger),
+            ),
+          ),
+        ],
       ),
     );
   }

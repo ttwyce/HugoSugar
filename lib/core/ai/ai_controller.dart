@@ -232,33 +232,33 @@ class AiController extends ChangeNotifier {
   ///
   /// [onApproval] 由 UI 提供：弹出 Diff 让用户决定。返回 null 表示
   /// 用户直接关掉了面板，按「拒绝」处理。
-  Future<void> send(
+  Future<bool> send(
     String userText, {
     required Future<ApprovalDecision?> Function(ApprovalRequest req)
         onApproval,
   }) async {
-    if (_busy) return;
+    if (_busy) return false;
 
     final text = userText.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) return false;
 
     final ep = activeEndpoint;
     if (ep == null) {
       _lastError = '还没有配置 AI 端点';
       notifyListeners();
-      return;
+      return false;
     }
     if (ep.model.trim().isEmpty) {
       _lastError = '还没有为「${ep.name}」选择模型';
       notifyListeners();
-      return;
+      return false;
     }
 
     final key = await readKey(ep.id);
     if (key == null || key.isEmpty) {
       _lastError = '还没有填写「${ep.name}」的 API Key';
       notifyListeners();
-      return;
+      return false;
     }
 
     _session ??= ChatSession(
@@ -301,7 +301,11 @@ class AiController extends ChangeNotifier {
     //
     // 放在 toApiMessages 之后、发请求之前：
     // 早压缩没有意义（还不知道会不会超），晚压缩就来不及了。
-    final rawMessages = withUser.toApiMessages();
+    // 用 s0（不含本次输入）作为历史。
+    //
+    // withUser 里已经有这条 user 消息了，而 AgentRunner.run 会在末尾
+    // 再补一条 —— 直接传 withUser 会让模型收到两遍同样的问题。
+    final rawMessages = s0.toApiMessages();
     final compressed = _compressor.compress(rawMessages);
     _lastCompressed = compressed.compressed;
     _lastDroppedCount = compressed.droppedCount;
@@ -388,10 +392,10 @@ class AiController extends ChangeNotifier {
       await _commitPartial(streamed.toString(), toolRecords);
       _lastError = null;
     } on AiException catch (e) {
-      _lastError = e.toString();
+      // 不设 _lastError：错误已经作为一条对话消息入流了，
+      // 再在顶部弹一条错误条就是同一句话说两遍。
       await _appendError(e.toString());
     } catch (e) {
-      _lastError = '$e';
       await _appendError('$e');
     } finally {
       _busy = false;
@@ -401,6 +405,14 @@ class AiController extends ChangeNotifier {
       _sessions = await _chatStore?.listAll() ?? const [];
       notifyListeners();
     }
+    return true;
+  }
+
+  /// 清掉界面上的错误条。
+  void clearError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    notifyListeners();
   }
 
   /// 中止当前请求。
@@ -415,8 +427,20 @@ class AiController extends ChangeNotifier {
     final token = _activeCancel;
     if (token == null || token.isCancelled) return;
     token.cancel();
-    _lastError = '已取消';
+    // 同样不设 _lastError：取消是用户主动操作，不是错误。
+    // 已经收到的内容会由 _commitPartial 带着「(已取消)」留痕。
     notifyListeners();
+  }
+
+  /// 发送前的同步检查。
+  ///
+  /// 返回 null = 可以发；否则是给用户看的原因。
+  /// UI 必须在**清空输入框之前**调用，否则用户的关键输入会被吞掉。
+  String? validateSend() {
+    final ep = activeEndpoint;
+    if (ep == null) return '还没有配置 AI 端点';
+    if (ep.model.trim().isEmpty) return '还没有为「${ep.name}」选择模型';
+    return null;
   }
 
   // ── 回滚 ────────────────────────────────────────────
@@ -648,6 +672,24 @@ class AiController extends ChangeNotifier {
     await f.parent.create(recursive: true);
     await f.writeAsString(content, flush: true);
     siteController?.refresh();
+  }
+
+  @visibleForTesting
+  void debugSetSession(ChatSession? s) {
+    _session = s;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetConfig(AiConfig cfg) {
+    _config = cfg;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetError(String? msg) {
+    _lastError = msg;
+    notifyListeners();
   }
 
   @override
