@@ -709,15 +709,33 @@ class SiteController extends ChangeNotifier {
     String sha;
     try {
       step('提交中…');
+
+      // 提交作者必须来自令牌对应的真实账号。
+      // 早先这里没传，落到 commitAll 的默认值上，于是所有提交都记在
+      // `HugoSugar` 名下 —— 用户在 GitHub 上看到的作者不是自己。
+      final profile = await _api.fetchProfile(pat);
+      if (profile.email.isEmpty) {
+        step('警告：拿不到账号邮箱，提交可能不会关联到你的 GitHub 主页');
+      }
+      step('提交者：${profile.commitName} <${profile.email}>');
+
       final msg = commitMessage.trim().isEmpty
           ? CommitMessage.suggest(pending.map((e) => e.path).toList())
           : commitMessage.trim();
       sha = GitService.commitAll(
         repoPath: root,
         message: msg,
+        authorName: profile.commitName,
+        authorEmail: profile.email,
         branch: cfg.branch,
       );
       step('已提交 $sha（${pending.length} 个文件）');
+    } on GitHubException catch (e) {
+      step('读取账号资料失败：${e.message}');
+      return PushOutcome.failure(
+        '无法确认提交身份：${e.message}',
+        log: log,
+      );
     } on GitOperationError catch (e) {
       step('提交失败：${e.rawMessage}');
       return PushOutcome.failure(_humanize(e), log: log);

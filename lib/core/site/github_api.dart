@@ -97,6 +97,37 @@ class GitHubException implements Exception {
   String toString() => message;
 }
 
+/// GitHub 账号资料，用于填写 git 提交作者。
+///
+/// 提交作者和「是谁推的」是两件事：push 用令牌鉴权（令牌属于谁，
+/// 就是谁推的），但 commit 里的 author 字段是**字符串**，GitHub 靠
+/// 其中的邮箱把提交关联到用户。所以这两个值必须取自真实账号，
+/// 不能写死 —— 早先硬编码成 `HugoSugar <hugosugar@users.noreply...>`，
+/// 结果用户在 GitHub 上看到的提交作者是一个陌生名字。
+class GitHubProfile {
+  const GitHubProfile({
+    required this.login,
+    required this.displayName,
+    required this.email,
+  });
+
+  /// 账号登录名，如 `ttwyce`
+  final String login;
+
+  /// 展示名（GitHub 的 Name 字段，没填就回落到 login）
+  final String displayName;
+
+  /// 主邮箱或 noreply 邮箱，用于 commit 的 author/committer.email
+  final String email;
+
+  /// 提交时该用的作者名。
+  ///
+  /// 用 login 而不是 displayName：GitHub 在提交列表里优先显示
+  /// 与账号关联的名字，但用 login 更稳定 —— 用户改了显示名也不会
+  /// 让历史提交看起来像另一个人的。
+  String get commitName => login.isNotEmpty ? login : displayName;
+}
+
 /// GitHub REST API 封装。
 ///
 /// 只做 M1 需要的三件事：验 token、列仓库、查单个仓库是否存在。
@@ -121,6 +152,20 @@ class GitHubApi {
   /// 顺带检查 scopes —— 没有 `repo` 权限的话，私有仓库一律列出不来，
   /// 这是「明明有仓库却看不到」的最常见原因。
   Future<String> validateToken(String token) async {
+    final profile = await fetchProfile(token);
+    return profile.login;
+  }
+
+  /// 取当前令牌对应的账号资料，用于填写 git 提交作者。
+  ///
+  /// 为什么要单独取 profile 而不是只用 login：
+  /// commit 的作者需要「名字 + 邮箱」两个值。名字用 login 就够，
+  /// 但邮箱必须是账号的真实 noreply 邮箱，否则 GitHub 不会把这次
+  /// 提交关联到用户主页（头像、贡献格子都不会出现）。
+  ///
+  /// `/user` 的 `email` 字段默认是 null（除非用户公开了邮箱），
+  /// 所以还要问一次 `/user/emails`。
+  Future<GitHubProfile> fetchProfile(String token) async {
     final res = await _request(() => _client.get(
           Uri.parse('$_base/user'),
           headers: _headers(token),
@@ -146,7 +191,61 @@ class GitHubApi {
       );
     }
 
-    return body['login'] as String? ?? '';
+    final login = body['login'] as String? ?? '';
+    final id = (body['id'] as num?)?.toInt();
+    final displayName = body['name'] as String?;
+    final publicEmail = body['email'] as String?;
+
+    // 优先用公开邮箱；没有就问 /user/emails 找 noreply 或主邮箱。
+    // 这两个接口都可能因为 fine-grained 令牌缺权限而失败，
+    // 失败就用 GitHub 的 noreply 规则自己拼一个 —— 那个地址是
+    // GitHub 官方推荐的、可直接用于 commit 的形式。
+    var email = publicEmail;
+    if (email == null || email.isEmpty) {
+      email = await _fetchPrimaryEmail(token);
+    }
+    if ((email == null || email.isEmpty) && id != null && login.isNotEmpty) {
+      email = '$id+$login@users.noreply.github.com';
+    }
+
+    return GitHubProfile(
+      login: login,
+      displayName: (displayName != null && displayName.trim().isNotEmpty)
+          ? displayName.trim()
+          : login,
+      email: email ?? '',
+    );
+  }
+
+  /// 从 `/user/emails` 取主邮箱；取不到返回 null。
+  ///
+  /// fine-grained 令牌可能没有 Email 权限，此时接口 403，
+  /// 这里静默返回 null 由调用方兜底，不要因此打断整个流程。
+  Future<String?> _fetchPrimaryEmail(String token) async {
+    try {
+      final res = await _request(() => _client.get(
+            Uri.parse('$_base/user/emails'),
+            headers: _headers(token),
+          ));
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final list = jsonDecode(utf8.decode(res.bodyBytes));
+      if (list is! List) return null;
+
+      // 优先 primary，其次第一个已验证的
+      String? verifiedFallback;
+      for (final e in list) {
+        if (e is! Map) continue;
+        final addr = e['email'] as String? ?? '';
+        if (addr.isEmpty) continue;
+        final primary = e['primary'] as bool? ?? false;
+        final verified = e['verified'] as bool? ?? false;
+        if (primary) return addr;
+        if (verified) verifiedFallback ??= addr;
+      }
+      return verifiedFallback;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// fine-grained token 不返回 x-oauth-scopes 头，此时不能仅凭空值就判定无权限。

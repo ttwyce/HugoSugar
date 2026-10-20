@@ -336,15 +336,20 @@ class GitService {
 
   /// 暂存全部变更并创建一次提交。
   ///
-  /// [authorName] / [authorEmail] 必须给，不给就用占位身份 ——
-  /// clone 下来的仓库可能没配 user.name，`Signature.defaultSignature` 会抛异常。
+  /// [authorName] / [authorEmail] **必须显式传入真实账号**。
+  ///
+  /// 这里曾经有 `= 'HugoSugar'` / `= 'hugosugar@users.noreply...'`
+  /// 这样的默认值，后果是只要调用方忘了传，提交就会被记在
+  /// 一个不存在的账号名下，GitHub 上显示的提交者永远是 HugoSugar，
+  /// 而且这个问题不会报错 —— 静默写错比抛异常难发现得多。
+  /// 现在改成必填，编译器会盯着每一个调用点。
   ///
   /// 返回新 commit 的短 SHA；没有可提交内容或失败时抛 [GitOperationError]。
   static String commitAll({
     required String repoPath,
     required String message,
-    String authorName = 'HugoSugar',
-    String authorEmail = 'hugosugar@users.noreply.github.com',
+    required String authorName,
+    required String authorEmail,
     required String branch,
   }) {
     Repository? repo;
