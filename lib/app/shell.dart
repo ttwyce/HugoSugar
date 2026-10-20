@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'theme/app_colors.dart';
+import '../core/ai/ai_controller.dart';
 import '../core/note/note_controller.dart';
 import '../core/settings/settings_controller.dart';
 import '../core/site/site_controller.dart';
@@ -21,6 +22,7 @@ class AppShell extends StatefulWidget {
     required this.siteController,
     required this.noteController,
     required this.settingsController,
+    required this.aiController,
   });
 
   final ThemeMode themeMode;
@@ -28,6 +30,7 @@ class AppShell extends StatefulWidget {
   final SiteController siteController;
   final NoteController noteController;
   final SettingsController settingsController;
+  final AiController aiController;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -64,7 +67,7 @@ class _AppShellState extends State<AppShell> {
             settingsController: widget.settingsController,
           ),
           PostsPage(siteController: widget.siteController),
-          const ChatPage(),
+          ChatPage(controller: widget.aiController),
           SitePage(
             controller: widget.siteController,
             settingsController: widget.settingsController,

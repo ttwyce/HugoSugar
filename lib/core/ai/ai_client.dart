@@ -1,0 +1,340 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import 'ai_endpoint.dart';
+import 'ai_message.dart';
+import 'sse_parser.dart';
+
+/// AI 调用过程中出现的可分类错误。
+///
+/// 分类而不是只给一段字符串，是因为调用方需要区别对待：
+/// key 错了要引导去设置，被限流要提示稍后，网络错可以重试。
+enum AiErrorKind {
+  /// 没配置端点 / 没选模型
+  notConfigured,
+
+  /// 401/403：key 不对或没有权限
+  badKey,
+
+  /// 429：限流或额度用尽
+  rateLimited,
+
+  /// 4xx：请求本身有问题（模型名不对、参数不支持）
+  badRequest,
+
+  /// 5xx：服务端故障
+  serverError,
+
+  /// 网络层：超时、连不上、TLS
+  network,
+
+  /// 流解析失败
+  badStream,
+}
+
+class AiException implements Exception {
+  AiException(this.kind, this.message, {this.hint});
+
+  final AiErrorKind kind;
+  final String message;
+  final String? hint;
+
+  /// 是否值得原样提示用户重试
+  bool get retryable =>
+      kind == AiErrorKind.network ||
+      kind == AiErrorKind.serverError ||
+      kind == AiErrorKind.rateLimited;
+
+  @override
+  String toString() => hint == null ? message : '$message（$hint）';
+}
+
+/// 模型列表项
+class AiModel {
+  const AiModel({required this.id});
+
+  final String id;
+
+  /// 粗略判断能否用于对话。
+  ///
+  /// `/models` 会把 embedding、whisper、tts、dall-e 也列出来，
+  /// 全部塞进下拉框会让用户挑到一个根本不能聊天的模型，
+  /// 然后在发送时收到 400。这里提前兜一层。
+  bool get looksChatCapable {
+    final s = id.toLowerCase();
+    const denied = [
+      'embedding',
+      'whisper',
+      'tts',
+      'dall-e',
+      'moderation',
+      'rerank',
+      'bge-',
+      'text-similarity',
+    ];
+    for (final d in denied) {
+      if (s.contains(d)) return false;
+    }
+    return true;
+  }
+}
+
+/// OpenAI 兼容端点客户端。
+///
+/// 只依赖 `package:http`，不引入任何 LLM SDK ——
+/// 各家 SDK 都只支持官方服务，反而挡不住「接入多个端点」这个需求。
+class AiClient {
+  AiClient({http.Client? client}) : _client = client ?? http.Client();
+
+  final http.Client _client;
+
+  void dispose() => _client.close();
+
+  Map<String, String> _headers(String apiKey) => {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+        // 部分中转站要求这个头，不要求时无害
+        'Accept': 'text/event-stream',
+      };
+
+  /// 拉取模型列表。
+  ///
+  /// 走 `GET /models`，几乎所有 OpenAI 兼容实现都有。
+  /// 少数中转站不支持，此时抛 [AiErrorKind.badRequest]，
+  /// 调用方应当退化成「手动填写模型名」而不是卡住。
+  Future<List<AiModel>> listModels({
+    required AiEndpoint endpoint,
+    required String apiKey,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    if (endpoint.baseUrl.trim().isEmpty) {
+      throw AiException(AiErrorKind.notConfigured, '还没有填写端点地址');
+    }
+
+    late http.Response res;
+    try {
+      res = await _client
+          .get(endpoint.uri('models'), headers: _headers(apiKey))
+          .timeout(timeout);
+    } on TimeoutException {
+      throw AiException(AiErrorKind.network, '获取模型列表超时',
+          hint: '检查网络，或直接手动填写模型名');
+    } catch (e) {
+      throw AiException(AiErrorKind.network, '获取模型列表失败：$e');
+    }
+
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw AiException(AiErrorKind.badKey, 'API Key 无效或没有权限',
+          hint: '检查 key 是否正确、是否已过期');
+    }
+    if (res.statusCode >= 500) {
+      throw AiException(AiErrorKind.serverError, '服务端错误 ${res.statusCode}');
+    }
+    if (res.statusCode != 200) {
+      throw AiException(
+        AiErrorKind.badRequest,
+        '获取模型列表失败（${res.statusCode}）',
+        hint: '这个端点可能不支持 /models，可以手动填写模型名',
+      );
+    }
+
+    try {
+      final j = jsonDecode(utf8.decode(res.bodyBytes));
+      if (j is! Map) throw const FormatException('不是 JSON 对象');
+      final data = j['data'];
+      if (data is! List) throw const FormatException('缺少 data 字段');
+      final models = <AiModel>[];
+      for (final m in data) {
+        if (m is Map) {
+          final id = m['id'];
+          if (id is String && id.isNotEmpty) models.add(AiModel(id: id));
+        }
+      }
+      models.sort((a, b) => a.id.compareTo(b.id));
+      return models;
+    } on FormatException catch (e) {
+      throw AiException(
+        AiErrorKind.badRequest,
+        '模型列表格式不对：${e.message}',
+        hint: '这个端点可能不是 OpenAI 兼容接口',
+      );
+    }
+  }
+
+  /// 发起一次流式对话。
+  ///
+  /// 返回的 Stream 会先吐出文本增量（String），
+  /// 结束时由调用方从 [StreamAccumulator] 取完整结果。
+  ///
+  /// [onDelta] 用于实时更新 UI；[accumulator] 由调用方传入以便
+  /// 在流结束后读取 tool_calls 与 usage。
+  Future<void> streamChat({
+    required AiEndpoint endpoint,
+    required String apiKey,
+    required List<AiMessage> messages,
+    required StreamAccumulator accumulator,
+    List<Map<String, dynamic>> tools = const [],
+    void Function(String delta)? onDelta,
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    if (endpoint.baseUrl.trim().isEmpty) {
+      throw AiException(AiErrorKind.notConfigured, '还没有配置 AI 端点');
+    }
+    if (endpoint.model.trim().isEmpty) {
+      throw AiException(AiErrorKind.notConfigured, '还没有选择模型');
+    }
+
+    final body = <String, dynamic>{
+      'model': endpoint.model,
+      'messages': messages.map((m) => m.toApiJson()).toList(),
+      'stream': true,
+      // 让服务端在流末尾带上 usage；不支持的实现会忽略这个字段
+      'stream_options': {'include_usage': true},
+    };
+    if (tools.isNotEmpty) {
+      body['tools'] = tools;
+      body['tool_choice'] = 'auto';
+    }
+
+    http.StreamedResponse res;
+    try {
+      final req = http.Request('POST', endpoint.uri('chat/completions'))
+        ..headers.addAll(_headers(apiKey))
+        ..bodyBytes = utf8.encode(jsonEncode(body));
+
+      res = await _client.send(req).timeout(timeout);
+    } on TimeoutException {
+      throw AiException(AiErrorKind.network, '连接 AI 端点超时',
+          hint: '检查网络或端点地址');
+    } catch (e) {
+      throw AiException(AiErrorKind.network, '请求失败：$e');
+    }
+
+    // 错误响应往往是普通 JSON，不是 SSE。
+    // 这里必须先判断状态码，否则会拿错误 JSON 去喂 SSE 解析器，
+    // 最终报成「流解析失败」，把真正的原因（key 错了）盖掉。
+    if (res.statusCode != 200) {
+      final text = await _readAll(res);
+      throw _mapHttpError(res.statusCode, text);
+    }
+
+    final parser = SseParser();
+    var sawDone = false;
+
+    try {
+      await for (final chunk
+          in res.stream.transform(utf8.decoder).timeout(timeout)) {
+        for (final payload in parser.push(chunk)) {
+          if (payload == '[DONE]') {
+            sawDone = true;
+            continue;
+          }
+          Map<String, dynamic> json;
+          try {
+            final decoded = jsonDecode(payload);
+            if (decoded is! Map) continue;
+            json = Map<String, dynamic>.from(decoded);
+          } catch (_) {
+            // 单个 chunk 坏了跳过即可，不要整条流都失败
+            continue;
+          }
+
+          // 有些实现在 SSE 里塞 error 对象
+          final err = json['error'];
+          if (err is Map) {
+            final msg = err['message'] as String? ?? '服务端返回错误';
+            throw AiException(AiErrorKind.serverError, msg);
+          }
+
+          final before = accumulator.content;
+          accumulator.addChunk(json);
+          final after = accumulator.content;
+          if (after.length > before.length && onDelta != null) {
+            onDelta(after.substring(before.length));
+          }
+        }
+      }
+
+      // 流结束，处理残留
+      for (final payload in parser.flush()) {
+        if (payload == '[DONE]') {
+          sawDone = true;
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(payload);
+          if (decoded is Map) {
+            accumulator.addChunk(Map<String, dynamic>.from(decoded));
+          }
+        } catch (_) {
+          // 忽略
+        }
+      }
+    } on AiException {
+      rethrow;
+    } on TimeoutException {
+      throw AiException(AiErrorKind.network, '流式响应超时中断');
+    } catch (e) {
+      throw AiException(AiErrorKind.badStream, '读取响应失败：$e');
+    }
+
+    // 没收到 [DONE] 但也没报错：后端可能是非标准实现。
+    // 只要拿到了内容就当成功，不要因为「缺结束标记」丢弃结果。
+    if (!sawDone && accumulator.content.isEmpty && !accumulator.hasToolCalls) {
+      throw AiException(
+        AiErrorKind.badStream,
+        '响应为空',
+        hint: '模型可能不支持流式，或端点返回了非标准格式',
+      );
+    }
+  }
+
+  Future<String> _readAll(http.StreamedResponse res) async {
+    try {
+      return await res.stream.transform(utf8.decoder).join().timeout(
+            const Duration(seconds: 10),
+          );
+    } catch (_) {
+      return '';
+    }
+  }
+
+  AiException _mapHttpError(int status, String body) {
+    // 尽量从错误体里抠出可读信息，各实现格式不一
+    String detail = body;
+    try {
+      final j = jsonDecode(body);
+      if (j is Map) {
+        final err = j['error'];
+        if (err is Map && err['message'] is String) {
+          detail = err['message'] as String;
+        } else if (j['message'] is String) {
+          detail = j['message'] as String;
+        }
+      }
+    } catch (_) {
+      // 保留原文
+    }
+    if (detail.length > 300) detail = '${detail.substring(0, 300)}…';
+
+    switch (status) {
+      case 401:
+      case 403:
+        return AiException(AiErrorKind.badKey, 'API Key 无效：$detail',
+            hint: '到设置里检查这个端点的 key');
+      case 404:
+        return AiException(AiErrorKind.badRequest, '接口不存在（404）',
+            hint: '端点地址可能少了或多了 /v1');
+      case 429:
+        return AiException(AiErrorKind.rateLimited, '请求过于频繁或额度用尽',
+            hint: '稍后再试，或换一个端点');
+      default:
+        if (status >= 500) {
+          return AiException(AiErrorKind.serverError, '服务端错误 $status：$detail');
+        }
+        return AiException(AiErrorKind.badRequest, '请求失败（$status）：$detail');
+    }
+  }
+}

@@ -3,6 +3,7 @@ import 'package:git2dart/git2dart.dart';
 
 import 'app/theme/app_theme.dart';
 import 'app/shell.dart';
+import 'core/ai/ai_controller.dart';
 import 'core/note/note_controller.dart';
 import 'core/note/note_store.dart';
 import 'core/settings/app_settings.dart';
@@ -39,6 +40,9 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   /// 因为本地文件读取通常 <50ms，值得用「直接可用」换掉闪一下的加载态。
   NoteController? _noteController;
 
+  /// AI 控制器。它依赖笔记与站点，所以要等这两个就绪后再建。
+  AiController? _aiController;
+
   @override
   void initState() {
     super.initState();
@@ -58,16 +62,29 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   Future<void> _initNotes() async {
     final store = await NoteStore.open();
     if (!mounted) return;
+    final notes = NoteController(store: store, site: _siteController);
+
+    // AI 必须在笔记之后建：它要用 NoteController 读想法。
+    final ai = AiController(
+      noteController: notes,
+      siteController: _siteController,
+    );
+    await ai.init();
+
+    if (!mounted) {
+      ai.dispose();
+      notes.dispose();
+      return;
+    }
     setState(() {
-      _noteController = NoteController(
-        store: store,
-        site: _siteController,
-      );
+      _noteController = notes;
+      _aiController = ai;
     });
   }
 
   @override
   void dispose() {
+    _aiController?.dispose();
     _noteController?.dispose();
     _siteController.dispose();
     _settingsController.dispose();
@@ -81,6 +98,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   @override
   Widget build(BuildContext context) {
     final notes = _noteController;
+    final ai = _aiController;
 
     return MaterialApp(
       title: 'HugoSugar',
@@ -88,7 +106,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: _themeMode,
-      home: notes == null
+      home: notes == null || ai == null
           // 笔记库打开前的极短占位。用空白而不是转圈，
           // 避免一闪而过的加载动画更刺眼。
           ? Scaffold(backgroundColor: Theme.of(context).scaffoldBackgroundColor)
@@ -98,6 +116,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
               siteController: _siteController,
               noteController: notes,
               settingsController: _settingsController,
+              aiController: ai,
             ),
     );
   }

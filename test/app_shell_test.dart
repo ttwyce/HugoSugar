@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hugosugar/app/theme/app_colors.dart';
 import 'package:hugosugar/app/theme/app_theme.dart';
 import 'package:hugosugar/app/shell.dart';
+import 'package:hugosugar/core/ai/ai_controller.dart';
 import 'package:hugosugar/core/note/note_controller.dart';
 import 'package:hugosugar/core/note/note_store.dart';
 import 'package:hugosugar/core/settings/settings_controller.dart';
@@ -35,6 +36,10 @@ Widget _wrap({
       siteController: site,
       noteController: notes,
       settingsController: SettingsController(),
+      aiController: AiController(
+        noteController: notes,
+        siteController: site,
+      ),
     ),
   );
 }
