@@ -14,11 +14,11 @@ void main() {
     test('toJson / fromJson 往返不丢字段', () {
       const s = AppSettings(
         authorName: 'ttwyce',
-        authorEmail: '3238084478@qq.com',
+        authorEmail: 'me@example.com',
       );
       final back = AppSettings.fromJson(s.toJson());
       expect(back.authorName, 'ttwyce');
-      expect(back.authorEmail, '3238084478@qq.com');
+      expect(back.authorEmail, 'me@example.com');
     });
 
     test('旧版 settings.json 没有这两个键时安全回落', () {
@@ -38,11 +38,11 @@ void main() {
         final store = SettingsStore(File('${dir.path}/settings.json'));
         await store.save(const AppSettings(
           authorName: 'ttwyce',
-          authorEmail: '3238084478@qq.com',
+          authorEmail: 'me@example.com',
         ));
         final loaded = await store.load();
         expect(loaded.authorName, 'ttwyce');
-        expect(loaded.authorEmail, '3238084478@qq.com');
+        expect(loaded.authorEmail, 'me@example.com');
       } finally {
         dir.deleteSync(recursive: true);
       }
