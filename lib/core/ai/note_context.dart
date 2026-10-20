@@ -31,6 +31,9 @@ enum NoteScopeMode {
   /// 只在精选（置顶）里
   pinned,
 
+  /// 只读对话里明确点名的那几条
+  explicitNotes,
+
   /// 不注入任何想法
   none,
 }
@@ -66,6 +69,7 @@ class NoteContextSelection {
         NoteScopeMode.all => '没有可读取的想法',
         NoteScopeMode.categories => '选中的分组里没有说话',
         NoteScopeMode.pinned => '没有精选的想法',
+        NoteScopeMode.explicitNotes => '指定的想法不存在或已删除',
         NoteScopeMode.none => '不读取想法',
       };
     }
@@ -75,6 +79,7 @@ class NoteContextSelection {
       NoteScopeMode.categories =>
         '读取选中分组 ${notes.length} 条',
       NoteScopeMode.pinned => '读取精选想法 ${notes.length} 条',
+      NoteScopeMode.explicitNotes => '读取指定想法 ${notes.length} 条',
       NoteScopeMode.none => '不读取想法',
     };
 
@@ -113,6 +118,82 @@ class NoteContextBuilder {
   /// 最多注入多少条，防止撑爆上下文
   final int maxNotes;
 
+  /// 根据设置构造一次读取。
+  ///
+  /// ## 开关与例外
+  ///
+  /// [enabled] 是全局开关（设置里的「允许 AI 读取想法」），默认关闭。
+  /// 但有两种情况**不受开关限制**，因为用户意图已经足够明确：
+  ///
+  /// 1. [explicitCategoryIds] 非空 —— 用户明确勾选了分组
+  /// 2. [explicitNoteIds] 非空 —— 对话里明确指定了某几条想法
+  ///
+  /// 这两者是「单次指令」，优先级高于全局权限设置。
+  /// 把它们当成例外而不是要求先打开开关，是因为：
+  /// 用户点「把这三条想法给 AI 看」时，再去设置页开一个总开关，
+  /// 是纯粹的多余步骤，而且会让用户以为操作失败了。
+  NoteContextSelection buildFromSettings({
+    required List<Note> allNotes,
+    required bool enabled,
+    Set<String> categoryIds = const {},
+    Set<String> explicitCategoryIds = const {},
+    Set<String> explicitNoteIds = const {},
+  }) {
+    // 情形 1：对话里点名了某几条想法 —— 直接给这几条
+    if (explicitNoteIds.isNotEmpty) {
+      final picked = allNotes
+          .where((n) => !n.isDeleted && explicitNoteIds.contains(n.id))
+          .toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return _finish(picked, mode: NoteScopeMode.explicitNotes);
+    }
+
+    // 情形 2：明确指定了分组 —— 即使总开关关着也读
+    if (explicitCategoryIds.isNotEmpty) {
+      return build(
+        allNotes: allNotes,
+        mode: NoteScopeMode.categories,
+        categoryIds: explicitCategoryIds,
+      );
+    }
+
+    // 情形 3：总开关关着，且没有明确指定 —— 什么都不读
+    if (!enabled) {
+      return const NoteContextSelection(
+        notes: [],
+        totalMatched: 0,
+        truncated: 0,
+        mode: NoteScopeMode.none,
+      );
+    }
+
+    // 情形 4：开关打开，按设置里的分组偏好读
+    if (categoryIds.isNotEmpty) {
+      return build(
+        allNotes: allNotes,
+        mode: NoteScopeMode.categories,
+        categoryIds: categoryIds,
+      );
+    }
+    return build(allNotes: allNotes, mode: NoteScopeMode.all);
+  }
+
+  NoteContextSelection _finish(
+    List<Note> sorted, {
+    required NoteScopeMode mode,
+  }) {
+    final truncated =
+        sorted.length > maxNotes ? sorted.length - maxNotes : 0;
+    final picked =
+        sorted.length > maxNotes ? sorted.sublist(0, maxNotes) : sorted;
+    return NoteContextSelection(
+      notes: picked,
+      totalMatched: sorted.length,
+      truncated: truncated,
+      mode: mode,
+    );
+  }
+
   NoteContextSelection build({
     required List<Note> allNotes,
     NoteScopeMode mode = NoteScopeMode.all,
@@ -125,6 +206,8 @@ class NoteContextBuilder {
       NoteScopeMode.none => <Note>[],
       NoteScopeMode.all => alive,
       NoteScopeMode.pinned => alive.where((n) => n.pinned).toList(),
+      // 这个模式只由 buildFromSettings 走，直接调 build() 视为空
+      NoteScopeMode.explicitNotes => <Note>[],
       NoteScopeMode.categories => alive
           .where((n) => n.categoryId != null &&
               categoryIds.contains(n.categoryId))

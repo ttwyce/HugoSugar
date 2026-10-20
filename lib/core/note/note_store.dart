@@ -130,6 +130,12 @@ class NoteStore {
   /// 所有未删除的笔记（回收站除外）
   List<Note> get active => _notes.where((n) => !n.isDeleted).toList();
 
+  /// 全部想法，**包含回收站里的**。
+  ///
+  /// 给 AI 上下文装配这类需要自己决定过滤逻辑的调用方用。
+  /// UI 列表不要用这个，用 [active] —— 否则删除的想法会漏出来。
+  List<Note> get all => List.unmodifiable(_notes);
+
   /// 回收站
   List<Note> get trashed => _notes.where((n) => n.isDeleted).toList();
 

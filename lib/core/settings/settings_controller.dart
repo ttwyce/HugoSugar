@@ -26,6 +26,12 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   @override
   String get authorEmail => _value.authorEmail;
 
+  @override
+  bool get aiReadNotes => _value.aiReadNotes;
+
+  @override
+  List<String> get aiNoteCategoryIds => _value.aiNoteCategoryIds;
+
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
     if (store != null) _store = store;
@@ -57,6 +63,27 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
     final e = email.trim();
     if (_value.authorName == n && _value.authorEmail == e) return;
     _value = _value.copyWith(authorName: n, authorEmail: e);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 设置「AI 是否可以读取想法」。
+  ///
+  /// 默认关闭。这是隐私相关的开关，只在用户主动打开后才生效。
+  Future<void> setAiReadNotes({required bool enabled}) async {
+    if (_value.aiReadNotes == enabled) return;
+    _value = _value.copyWith(aiReadNotes: enabled);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 设置 AI 可读取的分组（空列表 = 不限制）
+  Future<void> setAiNoteCategories(List<String> ids) async {
+    if (_value.aiNoteCategoryIds.length == ids.length &&
+        _value.aiNoteCategoryIds.toSet().containsAll(ids)) {
+      return;
+    }
+    _value = _value.copyWith(aiNoteCategoryIds: List.of(ids));
     notifyListeners();
     await _store?.save(_value);
   }

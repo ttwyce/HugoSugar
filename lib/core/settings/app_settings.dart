@@ -68,6 +68,8 @@ class AppSettings {
     this.fileNameStyle = FileNameStyle.fromTitle,
     this.authorName = '',
     this.authorEmail = '',
+    this.aiReadNotes = false,
+    this.aiNoteCategoryIds = const [],
   });
 
   final DateFormatStyle dateFormat;
@@ -89,17 +91,39 @@ class AppSettings {
   /// 这里只存用户自己填的值。
   final String authorEmail;
 
+  /// AI 是否可以读取想法。
+  ///
+  /// **默认关闭**。想法是私人草稿区，用户没明确打开之前，
+  /// 不应该有任何内容被送进第三方模型。这是一个需要主动授予的权限，
+  /// 而不是一个默认享受的便利。
+  ///
+  /// 注意：即使关闭，用户**明确指定**某个分组或某条想法时，
+  /// 仍然会读取被指定的部分 —— 明确的单次指令优先于全局开关。
+  /// 这个例外由 NoteContextBuilder 处理，不在这里。
+  final bool aiReadNotes;
+
+  /// AI 允许读取的分组 id。
+  ///
+  /// 空列表 = 不限制分组（读全部）。
+  /// 非空时，即使 [aiReadNotes] 为 false，也会读取这些分组里的想法，
+  /// 因为用户主动勾选了它们，意图是明确的。
+  final List<String> aiNoteCategoryIds;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
     String? authorName,
     String? authorEmail,
+    bool? aiReadNotes,
+    List<String>? aiNoteCategoryIds,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
       fileNameStyle: fileNameStyle ?? this.fileNameStyle,
       authorName: authorName ?? this.authorName,
       authorEmail: authorEmail ?? this.authorEmail,
+      aiReadNotes: aiReadNotes ?? this.aiReadNotes,
+      aiNoteCategoryIds: aiNoteCategoryIds ?? this.aiNoteCategoryIds,
     );
   }
 
@@ -108,6 +132,8 @@ class AppSettings {
         'fileNameStyle': fileNameStyle.id,
         'authorName': authorName,
         'authorEmail': authorEmail,
+        'aiReadNotes': aiReadNotes,
+        'aiNoteCategoryIds': aiNoteCategoryIds,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -115,6 +141,9 @@ class AppSettings {
         fileNameStyle: FileNameStyle.fromId(j['fileNameStyle'] as String?),
         authorName: j['authorName'] as String? ?? '',
         authorEmail: j['authorEmail'] as String? ?? '',
+        aiReadNotes: j['aiReadNotes'] as bool? ?? false,
+        aiNoteCategoryIds:
+            (j['aiNoteCategoryIds'] as List?)?.cast<String>() ?? const [],
       );
 }
 
@@ -127,6 +156,8 @@ abstract class SettingsControllerLike {
   FileNameStyle get fileNameStyle;
   String get authorName;
   String get authorEmail;
+  bool get aiReadNotes;
+  List<String> get aiNoteCategoryIds;
 }
 
 /// 读写 `settings.json`。

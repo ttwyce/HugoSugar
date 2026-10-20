@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/ai/note_context.dart';
 import '../../core/note/note.dart';
 import '../../core/note/note_controller.dart';
+import '../../core/settings/settings_controller.dart';
 import '../../shared/widgets.dart';
 import 'note_editor_page.dart';
 
@@ -11,9 +13,18 @@ import 'note_editor_page.dart';
 /// 三个视图（全部 / 置顶 / 回收站）+ 搜索 + 分类过滤。
 /// 置顶笔记会进 AI 的 System Prompt，所以区块标题里明确写了这一点。
 class NotesPage extends StatefulWidget {
-  const NotesPage({super.key, required this.controller});
+  const NotesPage({
+    super.key,
+    required this.controller,
+    this.settingsController,
+  });
 
   final NoteController controller;
+
+  /// 用于读写「AI 是否可以读取想法」。
+  ///
+  /// 可空：外壳之外的测试或预览可以只传笔记控制器。
+  final SettingsController? settingsController;
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -61,11 +72,32 @@ class _NotesPageState extends State<NotesPage> {
             icon: Icon(_searchOpen ? Icons.search_off : Icons.search),
             tooltip: '搜索',
           ),
+          // 回收站移到右上角：它是「低频但有明确去处」的功能，
+          // 和搜索并列比混在下面的视图 tab 里更符合导航直觉。
+          // 放在 tab 里还占掉一个筛选位，让「置顶」显得和它同级。
           IconButton(
-            onPressed: _showCategorySheet,
-            icon: const Icon(Icons.folder_outlined),
-            tooltip: '分类',
+            onPressed: () => c.setView(
+              c.view == NoteView.trashed ? NoteView.active : NoteView.trashed,
+            ),
+            icon: Icon(
+              c.view == NoteView.trashed
+                  ? Icons.delete
+                  : Icons.delete_outline,
+            ),
+            tooltip: c.trashCount > 0 ? '回收站（${c.trashCount}）' : '回收站',
           ),
+          // AI 读取范围设置。入口放在这里而不是设置页：
+          // 分组数据只有本页有，跨页传控制器只为渲染一个多选列表不值得。
+          if (widget.settingsController != null)
+            IconButton(
+              onPressed: _showAiScopeSheet,
+              icon: Icon(
+                widget.settingsController!.aiReadNotes
+                    ? Icons.psychology
+                    : Icons.psychology_outlined,
+              ),
+              tooltip: 'AI 读取范围',
+            ),
           const SizedBox(width: AppSpace.xs),
         ],
       ),
@@ -106,42 +138,14 @@ class _NotesPageState extends State<NotesPage> {
               ),
             ),
           _ViewTabs(controller: c),
-          if (c.categoryId != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.md,
-                0,
-                AppSpace.md,
-                AppSpace.xs,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.filter_alt,
-                    size: 14,
-                    color: context.appColors.accent,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '分类：${c.store.categoryById(c.categoryId)?.name ?? "未知"}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.appColors.accent,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => c.setCategory(null),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      minimumSize: const Size(0, 0),
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: const Text('清除', style: TextStyle(fontSize: 12)),
-                  ),
-                ],
-              ),
+          // 分类条放在视图 tab 之后、列表之前。
+          // 它是一个常驻的横向筛选行，而不是藏在弹窗里：
+          // 分组是想法的主要组织方式，藏起来等于让用户忘记它存在。
+          if (c.view != NoteView.trashed)
+            _CategoryBar(
+              controller: c,
+              onCreate: _createCategory,
+              onManage: _manageCategory,
             ),
           Expanded(
             child: notes.isEmpty
@@ -163,6 +167,147 @@ class _NotesPageState extends State<NotesPage> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// AI 读取范围设置面板。
+  ///
+  /// 这个面板同时承担两件事：
+  /// 1. 总开关（和设置页那个是同一个值，两处都能改）
+  /// 2. 限定分组（只有这里有数据，所以只能在这里做）
+  ///
+  /// 底部的说明行会实时显示「当前实际会读到多少条」，
+  /// 让开关的效果是**可见的**，而不是改完不知道该期待什么。
+  Future<void> _showAiScopeSheet() async {
+    final sc = widget.settingsController;
+    if (sc == null) return;
+    final colors = context.appColors;
+    final builder = const NoteContextBuilder();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final cats = c.store.categories;
+          final selected = sc.aiNoteCategoryIds.toSet();
+          final preview = builder.buildFromSettings(
+            allNotes: c.store.all,
+            enabled: sc.aiReadNotes,
+            categoryIds: selected,
+          );
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpace.md,
+                      AppSpace.md,
+                      AppSpace.md,
+                      AppSpace.xs,
+                    ),
+                    child: Text(
+                      'AI 读取范围',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  SwitchListTile(
+                    value: sc.aiReadNotes,
+                    onChanged: (v) async {
+                      await sc.setAiReadNotes(enabled: v);
+                      setSheet(() {});
+                      if (mounted) setState(() {});
+                    },
+                    secondary: const Icon(Icons.psychology_outlined),
+                    title: const Text('允许 AI 读取想法'),
+                    subtitle: Text(
+                      '关闭时 AI 看不到任何想法，除非你在对话里指定',
+                      style: TextStyle(fontSize: 12, color: colors.textTertiary),
+                    ),
+                  ),
+                  if (sc.aiReadNotes) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpace.md,
+                        AppSpace.xs,
+                        AppSpace.md,
+                        AppSpace.xxs,
+                      ),
+                      child: Text(
+                        '限定分组（不选 = 全部）',
+                        style: TextStyle(fontSize: 12, color: colors.textTertiary),
+                      ),
+                    ),
+                    for (final cat in cats)
+                      CheckboxListTile(
+                        value: selected.contains(cat.id),
+                        onChanged: (v) async {
+                          final next = Set<String>.of(selected);
+                          if (v == true) {
+                            next.add(cat.id);
+                          } else {
+                            next.remove(cat.id);
+                          }
+                          await sc.setAiNoteCategories(next.toList());
+                          setSheet(() {});
+                          if (mounted) setState(() {});
+                        },
+                        dense: true,
+                        title: Text(cat.name),
+                        subtitle: Text(
+                          '${c.store.countInCategory(cat.id)} 条',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    if (cats.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(AppSpace.md),
+                        child: Text(
+                          '还没有分组。可以在想法页新建分组后再回来限定范围。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ),
+                  ],
+                  // 实时反馈：让用户看到规则生效后的实际结果
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpace.md),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpace.sm),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceHigh,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: Text(
+                        preview.describe(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -343,81 +488,6 @@ class _NotesPageState extends State<NotesPage> {
     );
   }
 
-  void _showCategorySheet() {
-    final cats = c.store.categories;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('分类'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _createCategory();
-                  },
-                  tooltip: '新建分类',
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.all_inbox),
-                title: const Text('全部'),
-                trailing: c.categoryId == null
-                    ? Icon(
-                        Icons.check,
-                        size: 18,
-                        color: context.appColors.accent,
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  c.setCategory(null);
-                },
-              ),
-              for (final cat in cats)
-                ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(cat.name),
-                  subtitle: Text('${c.store.countInCategory(cat.id)} 条'),
-                  trailing: c.categoryId == cat.id
-                      ? Icon(
-                          Icons.check,
-                          size: 18,
-                          color: context.appColors.accent,
-                        )
-                      : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    c.setCategory(cat.id);
-                  },
-                  onLongPress: () {
-                    Navigator.pop(ctx);
-                    _manageCategory(cat);
-                  },
-                ),
-              if (cats.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(AppSpace.md),
-                  child: Text(
-                    '还没有分类。分类只是给想法分组，和文章的 categories 无关。\n'
-                    '长按分类可以重命名或删除。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.6,
-                      color: context.appColors.textTertiary,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Future<void> _createCategory() async {
     final name = await _promptText('新建分类', '分类名称');
@@ -490,6 +560,123 @@ class _NotesPageState extends State<NotesPage> {
   }
 }
 
+// ── 分类条 ───────────────────────────────────────────
+
+/// 常驻的横向分类筛选条。
+///
+/// 交互设计：
+/// - 点「全部」= 清除分类过滤
+/// - 点某个分类 = 只看它
+/// - 点「+」= 新建分组
+/// - 长按分类 = 重命名 / 删除
+///
+/// 之所以做成一整行而不是下拉弹窗：分类是想法的主要组织维度，
+/// 每次切换都要开弹窗选一次，等于让它变成「隐藏功能」。
+class _CategoryBar extends StatelessWidget {
+  const _CategoryBar({
+    required this.controller,
+    required this.onCreate,
+    required this.onManage,
+  });
+
+  final NoteController controller;
+  final VoidCallback onCreate;
+  final void Function(NoteCategory) onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final cats = controller.store.categories;
+
+    return SizedBox(
+      height: 38,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+        children: [
+          _chip(
+            context: context,
+            label: '全部',
+            selected: controller.categoryId == null,
+            onTap: () => controller.setCategory(null),
+          ),
+          for (final cat in cats) ...[
+            const SizedBox(width: AppSpace.xs),
+            GestureDetector(
+              onLongPress: () => onManage(cat),
+              child: _chip(
+                context: context,
+                label: cat.name,
+                selected: controller.categoryId == cat.id,
+                onTap: () => controller.setCategory(
+                  controller.categoryId == cat.id ? null : cat.id,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: AppSpace.xs),
+          Center(
+            child: InkWell(
+              onTap: onCreate,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpace.xs,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: c.divider),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Icon(Icons.add, size: 15, color: c.textSecondary),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip({
+    required BuildContext context,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final c = context.appColors;
+    return Center(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.sm,
+            vertical: 4,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? c.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: Border.all(
+              color: selected ? Colors.transparent : c.divider,
+            ),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? c.accent : c.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── 视图切换 ─────────────────────────────────────────
 
 class _ViewTabs extends StatelessWidget {
@@ -503,7 +690,6 @@ class _ViewTabs extends StatelessWidget {
     final items = <(NoteView, String, int)>[
       (NoteView.active, '全部', controller.activeCount),
       (NoteView.pinned, '置顶', controller.pinnedCount),
-      (NoteView.trashed, '回收站', controller.trashCount),
     ];
 
     return SizedBox(
@@ -598,9 +784,9 @@ class _MasonryGrid extends StatelessWidget {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
-        AppSpace.sm,
+        AppSpace.md,
         0,
-        AppSpace.sm,
+        AppSpace.md,
         96,
       ),
       children: [
@@ -623,7 +809,7 @@ class _MasonryGrid extends StatelessWidget {
       children: [
         for (final n in list)
           Padding(
-            padding: const EdgeInsets.only(top: AppSpace.sm),
+            padding: const EdgeInsets.only(top: AppSpace.xs),
             child: _NoteCard(
               note: n,
               pinned: n.pinned,
@@ -674,13 +860,12 @@ class _NoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    // 注意：这里**不能**加横向外边距。
+    // 两列布局下卡片由外层 _MasonryGrid 的 Expanded 定宽，
+    // 再加一层左右 padding 会让每列实际内容只有屏宽的 1/3 左右，
+    // 视觉上显得非常局促。列间距由 grid 的 SizedBox 统一控制。
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.md,
-        AppSpace.xxs,
-        AppSpace.md,
-        AppSpace.xs,
-      ),
+      padding: const EdgeInsets.only(top: AppSpace.xs),
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,

@@ -59,7 +59,10 @@ class _AppShellState extends State<AppShell> {
         children: [
           // Tab 顺序：想法 → 文章 → AI → 站点 → 设置
           // 想法排第一，因为它是最高频的入口：随手记一句比写整篇多得多。
-          NotesPage(controller: widget.noteController),
+          NotesPage(
+            controller: widget.noteController,
+            settingsController: widget.settingsController,
+          ),
           PostsPage(siteController: widget.siteController),
           const ChatPage(),
           SitePage(

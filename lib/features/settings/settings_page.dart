@@ -207,6 +207,42 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SectionHeader('AI'),
+          // 隐私相关的总开关，默认关闭。
+          // 想法是私人草稿区，没经过用户明确同意不该被送进第三方模型。
+          SwitchListTile(
+            value: widget.settingsController.aiReadNotes,
+            onChanged: (v) async {
+              await widget.settingsController.setAiReadNotes(enabled: v);
+              if (mounted) setState(() {});
+            },
+            secondary: const Icon(Icons.lightbulb_outline),
+            title: const Text('允许 AI 读取想法'),
+            subtitle: Text(
+              widget.settingsController.aiReadNotes
+                  ? '开启后 AI 可以读到你的想法'
+                  : '关闭时 AI 看不到任何想法（在对话里指定分组或想法除外）',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+          ),
+          if (widget.settingsController.aiReadNotes)
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: const Text('允许读取的分组'),
+              subtitle: Text(
+                widget.settingsController.aiNoteCategoryIds.isEmpty
+                    ? '全部（可在「想法」页的 AI 菜单里指定分组）'
+                    : '已选 ${widget.settingsController.aiNoteCategoryIds.length} 个',
+                style: TextStyle(fontSize: 12, color: c.textTertiary),
+              ),
+              // 分组选择需要 NoteStore，而设置页拿不到它。
+              // 与其为了一个开关把 NoteController 一路传进设置页，
+              // 不如把入口放在「想法」页 —— 那里本来就有分类数据和上下文。
+              trailing: Text(
+                '在想法页设置',
+                style: TextStyle(fontSize: 12, color: c.textTertiary),
+              ),
+            ),
+          const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.api),
             title: const Text('API 配置'),
