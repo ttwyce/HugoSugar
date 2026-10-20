@@ -160,6 +160,9 @@ class _EditorPageState extends State<EditorPage> {
   void _onTitleChanged() {
     if (!_ready) return;
     _markDirty();
+    // 改标题也算「正在写」，应该和改正文一样重置淡出计时器。
+    // 之前漏了这一行，导致在标题里打字时顶栏可能就在你眼前暗下去。
+    _onTyping();
   }
 
   void _markDirty() {
@@ -238,6 +241,12 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   void _reveal() {
+    // 关键：先停掉淡出计时器。
+    // 之前这里只把 opacity 改回 1，但那个 2 秒计时器还在跑，
+    // 于是「点一下亮了 → 2 秒后又暗」——用户感受就是点了没用。
+    // 停掉之后，顶栏保持可见，直到下一次真正开始打字才重新计时。
+    _chromeTimer?.cancel();
+    _chromeTimer = null;
     if (_chromeVisible) return;
     setState(() => _chromeVisible = true);
   }
@@ -369,9 +378,13 @@ class _EditorPageState extends State<EditorPage> {
     final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _reveal,
+      // 用 Listener 而不是 GestureDetector：
+      // GestureDetector 的 onTap 会被下面的 TextField 竞争掉（TextField 自己要处理
+      // 点击定位光标），外层根本收不到。Listener 走的是指针事件，命中链上每一层
+      // 都会收到，所以在正文里点一下一定能唤回顶栏。
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _reveal(),
         child: Stack(
           children: [
             SafeArea(
@@ -478,6 +491,8 @@ class _EditorPageState extends State<EditorPage> {
                         ),
                       ),
                     ),
+                    // 给固定显示的底部状态栏留出高度，避免最后一行文字被盖住
+                    SizedBox(height: 44 + MediaQuery.of(context).padding.bottom),
                   ],
                 ),
               ),
@@ -530,19 +545,18 @@ class _EditorPageState extends State<EditorPage> {
               ),
             ),
 
-            // 底部状态
+            // 底部状态：**不参与淡出**。
+            // 设计文档只要求顶栏淡出，这里的字数 / 保存状态 / 预览 / AI 是操作入口，
+            // 淡到 15% 等于让人找不到，所以固定常驻。
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: AnimatedOpacity(
-                opacity: _chromeVisible ? 1 : 0.15,
-                duration: const Duration(milliseconds: 200),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
-                  color: c.background,
-                  child: SafeArea(
-                    top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+                color: c.background,
+                child: SafeArea(
+                  top: false,
                     child: Row(
                       children: [
                         Text(
@@ -575,7 +589,6 @@ class _EditorPageState extends State<EditorPage> {
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
