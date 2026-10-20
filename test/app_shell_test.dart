@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:operit_flutter_project/app/theme/app_colors.dart';
-import 'package:operit_flutter_project/app/theme/app_theme.dart';
-import 'package:operit_flutter_project/app/shell.dart';
-import 'package:operit_flutter_project/core/site/site_controller.dart';
+import 'package:hugosugar/app/theme/app_colors.dart';
+import 'package:hugosugar/app/theme/app_theme.dart';
+import 'package:hugosugar/app/shell.dart';
+import 'package:hugosugar/core/site/site_controller.dart';
 
 Widget _wrap({required ThemeMode mode}) {
   return MaterialApp(

@@ -1,5 +1,5 @@
-name: operit_flutter_project
-description: A new Flutter project created with Operit.
+name: hugosugar
+description: "在手机上写 Hugo 文章，一键推到 GitHub —— 构建交给 Vercel，本地一概不管。"
 
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -17,7 +17,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+# Windows/macOS 等桌面端用 major.minor.patch+build 形式。
+# 目前处于 M1 阶段，用 0.x 表示尚未到可用版本。
+version: 0.1.0+1
 
 environment:
   sdk: ^3.9.0

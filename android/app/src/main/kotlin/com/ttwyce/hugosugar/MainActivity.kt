@@ -1,4 +1,4 @@
-package com.example.operit_flutter_project
+package com.ttwyce.hugosugar
 
 import io.flutter.embedding.android.FlutterActivity
 

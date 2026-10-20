@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.operit_flutter_project"
+    namespace = "com.ttwyce.hugosugar"
     compileSdk = flutter.compileSdkVersion
     // 本项目跑在 aarch64 + proot 上，NDK 27 的 clang-18 是裸 x86-64 ELF，
     // 没有 box64 包装层，无法执行（报 "clang: not found"）。
@@ -24,8 +24,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.operit_flutter_project"
+        // 应用 ID：手机上的唯一标识。改了就等于换了个 App，
+        // 已装的旧版本不会被覆盖，需要先卸载。
+        applicationId = "com.ttwyce.hugosugar"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
