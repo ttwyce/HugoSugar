@@ -53,6 +53,9 @@ dependencies:
   yaml: ^3.1.2
   markdown: ^7.3.1
   fast_gbk: ^1.0.0
+  # 仅供测试：给 path_provider 塞假实现，否则单测里真实 IO 会挂起。
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
 
 dev_dependencies:
   flutter_test:

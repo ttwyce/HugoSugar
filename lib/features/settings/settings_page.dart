@@ -142,7 +142,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
 
-    ctrl.dispose();
+    _disposeAfterDialog(ctrl);
     if (action == null) return;
     await sc.setAiSystemPrompt(action == 'reset' ? '' : action);
     if (mounted) setState(() {});
@@ -246,8 +246,11 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                             child: current == i
-                                ? const Icon(Icons.check,
-                                    color: Colors.white, size: 20)
+                                ? const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 20,
+                                  )
                                 : null,
                           ),
                           const SizedBox(height: 4),
@@ -275,6 +278,18 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  /// 延迟释放一个 TextEditingController。
+  ///
+  /// 为什么不能在 showDialog 返回后立即 dispose：
+  /// showDialog 的 Future 在 pop 那一刻就完成了，但弹窗还在
+  /// 播退场动画，里面的 TextField 仍挂在树上并持有这个 controller。
+  /// 提前 dispose 会让它在卸载时碰到已销毁的对象，
+  /// 在 debug 下直接触发框架断言（InheritedElement._dependents 不为空）。
+  /// 等一帧再释放就能避开这个时序。
+  void _disposeAfterDialog(TextEditingController c) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => c.dispose());
   }
 
   /// 编辑上下文压缩阈值。
@@ -402,12 +417,10 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
 
-    if (ok != true) {
-      ctrl.dispose();
-      return;
-    }
-    final v = int.tryParse(ctrl.text.trim());
-    ctrl.dispose();
+    // 先读值，再延迟释放 controller。
+    final v = ok == true ? int.tryParse(ctrl.text.trim()) : null;
+    _disposeAfterDialog(ctrl);
+    if (ok != true) return;
     if (v != null) {
       await sc.setAiMaxTokensPerRound(v);
       if (mounted) setState(() {});
