@@ -107,6 +107,9 @@ class SiteController extends ChangeNotifier {
   SiteStage get stage => _stage;
   SiteConfig? get config => _config;
   SiteStorage? get storage => _storage;
+
+  /// 文章目录（相对仓库根）。未接入时为空串。
+  String get postsDir => _config?.postsDir ?? '';
   String? get error => _error;
   CloneFailure? get failure => _failure;
 

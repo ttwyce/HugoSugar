@@ -56,6 +56,15 @@ class SettingsController extends ChangeNotifier
   List<String> get skillIds => _value.skillIds;
   @override
   int get accentPreset => _value.accentPreset;
+  @override
+  String get localeId => _value.localeId;
+
+  Future<void> setLocaleId(String id) async {
+    if (_value.localeId == id) return;
+    _value = _value.copyWith(localeId: id);
+    notifyListeners();
+    await _store?.save(_value);
+  }
 
   Future<void> setAccentPreset(int index) async {
     final v = index.clamp(0, 20);

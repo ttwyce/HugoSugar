@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../app/i18n/l10n_scope.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/post/front_matter.dart';
+import '../../core/post/post_transfer.dart';
+import '../../core/post/post_transfer_service.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import '../editor/editor_page.dart';
@@ -51,6 +54,143 @@ class _PostsPageState extends State<PostsPage> {
     if (mounted) setState(() {});
   }
 
+  /// 导出全部文章为 zip 并调起系统分享。
+  Future<void> _exportAll(SiteController sc) async {
+    final service = PostTransferService(sc);
+    try {
+      final report = await service.exportAll();
+      if (!mounted) return;
+      _showReport(report);
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('导出失败：$e');
+    }
+  }
+
+  /// 导入文章。先让用户选同名冲突策略，再选文件。
+  Future<void> _importPosts(SiteController sc) async {
+    final conflict = await showDialog<ImportConflict>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('导入文章'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              '遇到同名文件时：',
+              style: TextStyle(fontSize: 12, color: ctx.appColors.textTertiary),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, ImportConflict.skip),
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.skip_next, size: 20),
+              title: Text('跳过已存在的'),
+              subtitle: Text('保留仓库里的版本（推荐）', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, ImportConflict.rename),
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.copy_all_outlined, size: 20),
+              title: Text('存为新文件'),
+              subtitle: Text('自动加 -2、-3 后缀', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, ImportConflict.overwrite),
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.swap_horiz, size: 20),
+              title: Text('覆盖已存在的'),
+              subtitle: Text('仓库里的同名文件会被替换', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (conflict == null || !mounted) return;
+
+    final service = PostTransferService(sc);
+    try {
+      final report = await service.pickAndImport(conflict: conflict);
+      if (!mounted) return;
+      if (report == null) return; // 用户取消选文件
+      _showReport(report);
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('导入失败：$e');
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 展示导入导出结果。
+  ///
+  /// 失败/跳过的明细用对话框而不是 SnackBar：
+  /// 只报「失败 3 篇」等于没说，用户需要知道是哪 3 篇、为什么。
+  void _showReport(TransferReport report) {
+    if (report.failed.isEmpty && report.skipped.isEmpty) {
+      _showSnack(report.message);
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.appColors;
+        return AlertDialog(
+          title: Text(report.ok ? '完成' : '部分完成'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Text(
+                  report.message,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (report.failed.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('失败', style: TextStyle(fontSize: 12, color: c.danger)),
+                  for (final e in report.failed.entries)
+                    Text(
+                      '· ${e.key}：${e.value}',
+                      style: TextStyle(fontSize: 11, color: c.textSecondary),
+                    ),
+                ],
+                if (report.skipped.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '跳过',
+                    style: TextStyle(fontSize: 12, color: c.textTertiary),
+                  ),
+                  for (final e in report.skipped.entries)
+                    Text(
+                      '· ${e.key}：${e.value}',
+                      style: TextStyle(fontSize: 11, color: c.textTertiary),
+                    ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   List<PostDocument> _visible(SiteController sc) {
     var list = sc.posts;
 
@@ -78,9 +218,8 @@ class _PostsPageState extends State<PostsPage> {
   Widget build(BuildContext context) {
     final sc = widget.siteController;
     final visible = _visible(sc);
-    final hasActiveFilter = _filter != _Filter.all ||
-        _category != null ||
-        _tag != null;
+    final hasActiveFilter =
+        _filter != _Filter.all || _category != null || _tag != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -104,17 +243,50 @@ class _PostsPageState extends State<PostsPage> {
             onPressed: sc.stage == SiteStage.ready
                 ? () => _openTrash(sc)
                 : null,
-            icon: Icon(
-              sc.trashCount > 0 ? Icons.delete : Icons.delete_outline,
-            ),
+            icon: Icon(sc.trashCount > 0 ? Icons.delete : Icons.delete_outline),
             tooltip: sc.trashCount > 0 ? '回收站（${sc.trashCount}）' : '回收站',
           ),
           IconButton(
-            onPressed: sc.stage == SiteStage.ready
-                ? () => _openPush(sc)
-                : null,
+            onPressed: sc.stage == SiteStage.ready ? () => _openPush(sc) : null,
             icon: const Icon(Icons.cloud_upload_outlined),
             tooltip: '推送到 GitHub',
+          ),
+          PopupMenuButton<String>(
+            tooltip: '导入导出',
+            enabled: sc.stage == SiteStage.ready,
+            icon: const Icon(Icons.swap_vert),
+            onSelected: (v) {
+              if (v == 'export_all') _exportAll(sc);
+              if (v == 'import') _importPosts(sc);
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: 'export_all',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.download_outlined, size: 20),
+                  title: Text(ctx.tr('导出全部文章')),
+                  subtitle: Text(
+                    ctx.tr('打包成 zip 并分享'),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.upload_outlined, size: 20),
+                  title: Text(ctx.tr('导入文章')),
+                  subtitle: Text(
+                    ctx.tr('从 zip 或 .md 导入'),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: AppSpace.xs),
         ],
@@ -126,99 +298,99 @@ class _PostsPageState extends State<PostsPage> {
       ),
       body: switch (sc.stage) {
         SiteStage.ready when sc.posts.isEmpty => const EmptyState(
-            icon: Icons.description_outlined,
-            text: '还没有文章',
-          ),
+          icon: Icons.description_outlined,
+          text: '还没有文章',
+        ),
         SiteStage.ready => RefreshIndicator(
-            onRefresh: sc.refresh,
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 96),
-              children: [
-                if (_showFilters) ...[
-                  _FilterBar(
-                    filter: _filter,
-                    category: _category,
-                    tag: _tag,
-                    draftCount: sc.draftCount,
-                    publishedCount: sc.publishedCount,
-                    totalCount: sc.posts.length,
-                    categories: sc.allCategories,
-                    tags: sc.allTags,
-                    countInCategory: sc.countInCategory,
-                    countWithTag: sc.countWithTag,
-                    onFilter: (f) => setState(() => _filter = f),
-                    onCategory: (v) => setState(() => _category = v),
-                    onTag: (v) => setState(() => _tag = v),
-                  ),
-                  const SizedBox(height: AppSpace.xs),
-                ],
-                SectionHeader(
-                  hasActiveFilter
-                      ? '筛选结果 · ${visible.length}'
-                      : '全部 · ${visible.length}',
+          onRefresh: sc.refresh,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              if (_showFilters) ...[
+                _FilterBar(
+                  filter: _filter,
+                  category: _category,
+                  tag: _tag,
+                  draftCount: sc.draftCount,
+                  publishedCount: sc.publishedCount,
+                  totalCount: sc.posts.length,
+                  categories: sc.allCategories,
+                  tags: sc.allTags,
+                  countInCategory: sc.countInCategory,
+                  countWithTag: sc.countWithTag,
+                  onFilter: (f) => setState(() => _filter = f),
+                  onCategory: (v) => setState(() => _category = v),
+                  onTag: (v) => setState(() => _tag = v),
                 ),
-                if (hasActiveFilter)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpace.md,
-                      0,
-                      AppSpace.md,
-                      AppSpace.xs,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _describeFilter(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.5,
-                              color: context.appColors.textTertiary,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => setState(() {
-                            _filter = _Filter.all;
-                            _category = null;
-                            _tag = null;
-                          }),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 0),
-                          ),
-                          child: const Text('清除'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (visible.isEmpty)
-                  const EmptyState(
-                    icon: Icons.filter_alt_off_outlined,
-                    text: '没有符合条件的文章',
-                  )
-                else
-                  for (var i = 0; i < visible.length; i++) ...[
-                    if (i > 0) const IndentedDivider(),
-                    _PostRow(
-                      post: visible[i],
-                      onTap: () => _open(visible[i]),
-                      onLongPress: () => _showPostMenu(sc, visible[i]),
-                    ),
-                  ],
+                const SizedBox(height: AppSpace.xs),
               ],
-            ),
+              SectionHeader(
+                hasActiveFilter
+                    ? '筛选结果 · ${visible.length}'
+                    : '全部 · ${visible.length}',
+              ),
+              if (hasActiveFilter)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.md,
+                    0,
+                    AppSpace.md,
+                    AppSpace.xs,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _describeFilter(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.5,
+                            color: context.appColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _filter = _Filter.all;
+                          _category = null;
+                          _tag = null;
+                        }),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 0),
+                        ),
+                        child: const Text('清除'),
+                      ),
+                    ],
+                  ),
+                ),
+              if (visible.isEmpty)
+                const EmptyState(
+                  icon: Icons.filter_alt_off_outlined,
+                  text: '没有符合条件的文章',
+                )
+              else
+                for (var i = 0; i < visible.length; i++) ...[
+                  if (i > 0) const IndentedDivider(),
+                  _PostRow(
+                    post: visible[i],
+                    onTap: () => _open(visible[i]),
+                    onLongPress: () => _showPostMenu(sc, visible[i]),
+                  ),
+                ],
+            ],
           ),
+        ),
         SiteStage.cloning => const Center(
-            child: CircularProgressIndicator(strokeWidth: 2.5),
-          ),
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
         _ => EmptyState(
-            icon: Icons.folder_outlined,
-            text: sc.stage == SiteStage.failed
-                ? '站点接入失败，请到「站点」页重试'
-                : '请先到「站点」页接入 Git 仓库',
-          ),
+          icon: Icons.folder_outlined,
+          text: sc.stage == SiteStage.failed
+              ? '站点接入失败，请到「站点」页重试'
+              : '请先到「站点」页接入 Git 仓库',
+        ),
       },
     );
   }
@@ -246,9 +418,9 @@ class _PostsPageState extends State<PostsPage> {
 
   /// 打开推送页
   void _openPush(SiteController sc) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PushPage(controller: sc)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => PushPage(controller: sc)));
   }
 
   /// 打开回收站。
@@ -258,9 +430,9 @@ class _PostsPageState extends State<PostsPage> {
   Future<void> _openTrash(SiteController sc) async {
     await sc.loadTrash();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PostTrashPage(controller: sc)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => PostTrashPage(controller: sc)));
   }
 
   /// 长按文章行的快捷菜单
@@ -349,9 +521,7 @@ class _PostsPageState extends State<PostsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          result.ok
-              ? (post.draft ? '已发布' : '已改为草稿')
-              : '修改失败：${result.message}',
+          result.ok ? (post.draft ? '已发布' : '已改为草稿') : '修改失败：${result.message}',
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -404,10 +574,8 @@ class _PostsPageState extends State<PostsPage> {
     final result = await showModalBottomSheet<_NewPostResult>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _NewPostSheet(
-        categories: existingCats,
-        tags: existingTags,
-      ),
+      builder: (_) =>
+          _NewPostSheet(categories: existingCats, tags: existingTags),
     );
     if (result == null || !mounted) return;
 
@@ -421,20 +589,17 @@ class _PostsPageState extends State<PostsPage> {
 
     if (!mounted) return;
     if (path == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(sc.error ?? '创建失败')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(sc.error ?? '创建失败')));
       return;
     }
 
     // 直接进编辑器
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => EditorPage(
-          title: result.title,
-          relativePath: path,
-          controller: sc,
-        ),
+        builder: (_) =>
+            EditorPage(title: result.title, relativePath: path, controller: sc),
       ),
     );
   }
@@ -822,9 +987,9 @@ class _NewPostSheetState extends State<_NewPostSheet> {
   void _submit() {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写标题')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请填写标题')));
       return;
     }
     Navigator.of(context).pop(
@@ -939,10 +1104,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
                       children: [
                         Text(
                           '保存为草稿',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: c.textPrimary,
-                          ),
+                          style: TextStyle(fontSize: 14, color: c.textPrimary),
                         ),
                         Text(
                           '草稿不会出现在站点上，可在编辑器里随时转为发布',

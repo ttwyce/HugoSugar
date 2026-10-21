@@ -79,6 +79,7 @@ class AppSettings {
     this.aiDisabledTools = const [],
     this.skillIds = const [],
     this.accentPreset = 0,
+    this.localeId = 'zh',
   });
 
   final DateFormatStyle dateFormat;
@@ -158,6 +159,12 @@ class AppSettings {
   /// 能自动跟上；而且预设有亮/暗两套值，单存一个 Color 无法表达。
   final int accentPreset;
 
+  /// 界面语言 id（'zh' / 'en'）。
+  ///
+  /// 存字符串而不是 enum：AppSettings 是纯数据，
+  /// 不应依赖 app/i18n 层。转换在 controller 里做。
+  final String localeId;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
@@ -172,6 +179,7 @@ class AppSettings {
     List<String>? aiDisabledTools,
     List<String>? skillIds,
     int? accentPreset,
+    String? localeId,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
@@ -187,6 +195,7 @@ class AppSettings {
       aiDisabledTools: aiDisabledTools ?? this.aiDisabledTools,
       skillIds: skillIds ?? this.skillIds,
       accentPreset: accentPreset ?? this.accentPreset,
+      localeId: localeId ?? this.localeId,
     );
   }
 
@@ -204,6 +213,7 @@ class AppSettings {
     'aiDisabledTools': aiDisabledTools,
     'skillIds': skillIds,
     'accentPreset': accentPreset,
+    'localeId': localeId,
   };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -227,6 +237,7 @@ class AppSettings {
         (j['aiDisabledTools'] as List?)?.cast<String>() ?? const [],
     skillIds: (j['skillIds'] as List?)?.cast<String>() ?? const [],
     accentPreset: ((j['accentPreset'] as num?)?.toInt() ?? 0).clamp(0, 20),
+    localeId: j['localeId'] as String? ?? 'zh',
   );
 }
 
@@ -248,6 +259,7 @@ abstract class SettingsControllerLike {
   List<String> get aiDisabledTools;
   List<String> get skillIds;
   int get accentPreset;
+  String get localeId;
 }
 
 /// 读写 `settings.json`。

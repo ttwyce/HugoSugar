@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/i18n/l10n_scope.dart';
+import '../../app/i18n/strings.dart';
 import '../../app/theme/accent_presets.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/ai_controller.dart';
@@ -192,6 +194,42 @@ class _SettingsPageState extends State<SettingsPage> {
     return '当前启用 $active 个 / 共 $total 个';
   }
 
+  String _localeLabel() {
+    final id = widget.settingsController.localeId;
+    return AppLocale.fromId(id).label;
+  }
+
+  /// 切界面语言。
+  ///
+  /// 选完立即生效并关掉弹窗 —— 不需要重启。
+  /// L10nScope 在 MaterialApp.builder 里，settings 一 notify 就会重建。
+  Future<void> _pickLocale() async {
+    final current = widget.settingsController.localeId;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            for (final l in AppLocale.values)
+              ListTile(
+                title: Text(l.label),
+                trailing: l.id == current
+                    ? Icon(Icons.check, color: bctx.appColors.accent)
+                    : null,
+                onTap: () => Navigator.pop(bctx, l.id),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await widget.settingsController.setLocaleId(picked);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _pickAccent() async {
     final current = widget.settingsController.accentPreset;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -298,77 +336,16 @@ class _SettingsPageState extends State<SettingsPage> {
   /// ContextCompressor 会判定「要压缩」但保留的比阈值还多，
   /// 压缩完反而更长。所以在一个弹窗里同时收这两个值。
   Future<void> _editCompress() async {
-    var threshold = widget.settingsController.aiCompressThreshold;
-    var keep = widget.settingsController.aiKeepRecent;
-
-    final ok = await showDialog<bool>(
+    final r = await showDialog<({int threshold, int keep})>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => AlertDialog(
-          title: const Text('上下文压缩'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Expanded(child: Text('触发阈值（条）')),
-                  SizedBox(
-                    width: 64,
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.right,
-                      controller: TextEditingController(text: '$threshold'),
-                      onChanged: (v) => threshold =
-                          (int.tryParse(v) ?? threshold).clamp(4, 200),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Expanded(child: Text('保留最近（条）')),
-                  SizedBox(
-                    width: 64,
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.right,
-                      controller: TextEditingController(text: '$keep'),
-                      onChanged: (v) =>
-                          keep = (int.tryParse(v) ?? keep).clamp(2, 199),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '超过阈值后，较早的消息会被折叠成摘要，'
-                '最近几条原样保留。\n'
-                '下限 4 / 上限 200。保留数必须小于阈值。',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: ctx.appColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+      builder: (_) => _CompressDialog(
+        threshold: widget.settingsController.aiCompressThreshold,
+        keep: widget.settingsController.aiKeepRecent,
       ),
     );
-
-    if (ok != true) return;
-    await widget.settingsController.setAiCompressThreshold(threshold);
-    await widget.settingsController.setAiKeepRecent(keep);
+    if (r == null) return;
+    await widget.settingsController.setAiCompressThreshold(r.threshold);
+    await widget.settingsController.setAiKeepRecent(r.keep);
     if (mounted) setState(() {});
   }
 
@@ -470,11 +447,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final cfg = sc.config;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(title: Text(context.tr('设置'))),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
-          const SectionHeader('写作'),
+          SectionHeader(context.tr('写作')),
           ListTile(
             leading: const Icon(Icons.event_outlined),
             title: const Text('日期格式'),
@@ -499,7 +476,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () => _pickFileNameStyle(context),
           ),
 
-          const SectionHeader('外观'),
+          SectionHeader(context.tr('外观')),
           _SegmentedThemeMode(
             value: widget.themeMode,
             onChanged: widget.onThemeModeChanged,
@@ -516,7 +493,18 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const IndentedDivider(),
           ListTile(
-            title: const Text('正文字体'),
+            leading: const Icon(Icons.translate),
+            title: Text(context.tr('界面语言')),
+            subtitle: Text(
+              _localeLabel(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _pickLocale,
+          ),
+          const IndentedDivider(),
+          ListTile(
+            title: Text(context.tr('正文字体')),
             subtitle: const Text('系统黑体'),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: () {},
@@ -529,7 +517,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () {},
           ),
 
-          const SectionHeader('站点'),
+          SectionHeader(context.tr('站点')),
           ListTile(
             leading: const Icon(Icons.folder_outlined),
             title: const Text('当前站点'),
@@ -678,7 +666,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: _openSkills,
           ),
 
-          const SectionHeader('关于'),
+          SectionHeader(context.tr('关于')),
           ListTile(
             title: const Text('版本'),
             subtitle: const Text('0.1.0 (M1)'),
@@ -878,6 +866,112 @@ class _SegmentedThemeMode extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 上下文压缩设置弹窗。
+///
+/// 为什么抽成独立 StatefulWidget：原来用 StatefulBuilder + 在
+/// builder 里直接 `TextEditingController(text: ...)`，每次 setSt 都新建
+/// 一个 controller 且从不释放 —— 属于确定性泄漏，
+/// 反复打开该设置会持续占内存。
+/// 放进 State 里就能在 dispose 时一次性收拾。
+class _CompressDialog extends StatefulWidget {
+  const _CompressDialog({required this.threshold, required this.keep});
+
+  final int threshold;
+  final int keep;
+
+  @override
+  State<_CompressDialog> createState() => _CompressDialogState();
+}
+
+class _CompressDialogState extends State<_CompressDialog> {
+  late final TextEditingController _thresholdCtrl;
+  late final TextEditingController _keepCtrl;
+  late int _threshold;
+  late int _keep;
+
+  @override
+  void initState() {
+    super.initState();
+    _threshold = widget.threshold;
+    _keep = widget.keep;
+    _thresholdCtrl = TextEditingController(text: '$widget.threshold');
+    _keepCtrl = TextEditingController(text: '$widget.keep');
+  }
+
+  @override
+  void dispose() {
+    _thresholdCtrl.dispose();
+    _keepCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return AlertDialog(
+      title: const Text('上下文压缩'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('触发阈值（条）')),
+              SizedBox(
+                width: 64,
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  controller: _thresholdCtrl,
+                  onChanged: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) _threshold = n.clamp(4, 200);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Expanded(child: Text('保留最近（条）')),
+              SizedBox(
+                width: 64,
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  controller: _keepCtrl,
+                  onChanged: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) _keep = n.clamp(2, 199);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '超过阈值后，较早的消息会被折叠成摘要，'
+            '最近几条原样保留。\n'
+            '下限 4 / 上限 200。保留数必须小于阈值。',
+            style: TextStyle(fontSize: 11, color: c.textTertiary),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(context, (threshold: _threshold, keep: _keep)),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

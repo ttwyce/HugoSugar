@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:git2dart/git2dart.dart';
 
+import 'app/i18n/l10n_scope.dart';
+import 'app/i18n/strings.dart';
 import 'app/theme/app_theme.dart';
 import 'app/shell.dart';
 import 'core/ai/ai_controller.dart';
@@ -110,6 +112,13 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
       darkTheme: AppTheme.dark(
           accentIndex: _settingsController.accentPreset),
       themeMode: _themeMode,
+      // 语言放在 builder 里而不是包住 MaterialApp：
+      // MaterialApp 内部会新建 Navigator/Overlay，弹窗属于那一层；
+      // 只有放进 builder 才能让弹窗里的 context.tr 也取得到。
+      builder: (context, child) => L10nScope(
+        locale: AppLocale.fromId(_settingsController.localeId),
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: notes == null || ai == null
           // 笔记库打开前的极短占位。用空白而不是转圈，
           // 避免一闪而过的加载动画更刺眼。

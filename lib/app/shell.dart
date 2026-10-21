@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'i18n/l10n_scope.dart';
 import 'theme/app_colors.dart';
 import '../core/ai/ai_controller.dart';
 import '../core/note/note_controller.dart';
@@ -96,31 +97,32 @@ class _AppShellState extends State<AppShell> {
             setState(() => _index = i);
             _tabIndex.value = i;
           },
-          destinations: const [
+          // 去掉 const：label 要调 context.tr，常量表达式不允许。
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.lightbulb_outline),
-              selectedIcon: Icon(Icons.lightbulb),
-              label: '想法',
+              icon: const Icon(Icons.lightbulb_outline),
+              selectedIcon: const Icon(Icons.lightbulb),
+              label: context.tr('想法'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.article_outlined),
-              selectedIcon: Icon(Icons.article),
-              label: '文章',
+              icon: const Icon(Icons.article_outlined),
+              selectedIcon: const Icon(Icons.article),
+              label: context.tr('文章'),
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.auto_awesome_outlined),
               selectedIcon: Icon(Icons.auto_awesome),
               label: 'AI',
             ),
             NavigationDestination(
-              icon: Icon(Icons.folder_outlined),
-              selectedIcon: Icon(Icons.folder),
-              label: '站点',
+              icon: const Icon(Icons.folder_outlined),
+              selectedIcon: const Icon(Icons.folder),
+              label: context.tr('站点'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: '设置',
+              icon: const Icon(Icons.settings_outlined),
+              selectedIcon: const Icon(Icons.settings),
+              label: context.tr('设置'),
             ),
           ],
         ),
