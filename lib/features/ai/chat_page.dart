@@ -139,7 +139,8 @@ class _ChatPageState extends State<ChatPage> {
                             horizontal: AppSpace.md,
                             vertical: AppSpace.sm,
                           ),
-                          itemCount: entries.length +
+                          itemCount:
+                              entries.length +
                               (ctrl.streamingText != null ? 1 : 0),
                           itemBuilder: (_, i) {
                             if (i < entries.length) {
@@ -202,74 +203,164 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 选择思考档位。
   ///
-  /// 每个档位都附带一句「实际会发生什么」，因为
-  /// none/low 在开关式协议上完全等价 —— 不说清楚，
-  /// 用户会以为选了没反应是 bug。
+  /// ## 为什么必须限制高度 + 可滚动
+  ///
+  /// 上一版是 5 个 ListTile（每个约 72 高）直接堆在 Column 里，
+  /// 总高超过了 showModalBottomSheet 默认的最大高度（屏幕 9/16），
+  /// 于是报 `BOTTOM OVERFLOWED BY 1.2 PIXELS`。
+  ///
+  /// 现在的做法：
+  /// - 外层 `ConstrainedBox(maxHeight: 屏高 * 0.72)` 留出安全边距
+  /// - 内容放进 `SingleChildScrollView`
+  /// - 档位改成横向胶囊网格，整体高度从 ~400 压到 ~200
+  ///
+  /// 网格比 ListTile 更好：一屏看全 5 个档位，不用滚，
+  /// 也更容易点（每格都是完整按钮，不是一行细文字）。
   void _pickThinkingLevel() {
     final ctrl = widget.controller;
     final hint = ctrl.thinkingHint;
+    final screenH = MediaQuery.sizeOf(context).height;
 
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (sheetCtx) {
         final c = sheetCtx.appColors;
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                child: Row(
+          // 不给死高度：内容少时自然贴合，内容多时封顶并滚动。
+          // 封顶值取 0.72 而不是 0.9，是因为键盘还没算进来 ——
+          // 留出余量可以避免任何情况的 1~2px 溢出。
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: screenH * 0.72),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '思考档位',
-                      style: TextStyle(fontSize: 13, color: c.textSecondary),
+                    // 拖动条：暗示这是可下拉的弹窗
+                    Center(
+                      child: Container(
+                        width: 32,
+                        height: 3,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: c.divider,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
-                    const Spacer(),
-                    Text(
-                      ctrl.thinkingProtocol.label,
-                      style: TextStyle(fontSize: 11, color: c.textTertiary),
+                    Row(
+                      children: [
+                        Text(
+                          '思考档位',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            ctrl.thinkingProtocol.label,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: c.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              if (hint != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 12, color: c.warning),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          hint,
-                          style: TextStyle(fontSize: 11, color: c.warning),
+                    if (hint != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c.warning.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 12,
+                              color: c.warning,
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                hint,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: c.warning,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 12),
+                    // 横向等宽胶囊：一行两个，5 个档位占三行
+                    for (var i = 0; i < ThinkingLevel.values.length; i += 2)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _LevelOption(
+                                level: ThinkingLevel.values[i],
+                                selected:
+                                    ctrl.thinkingLevel ==
+                                    ThinkingLevel.values[i],
+                                onTap: () {
+                                  ctrl.setThinkingLevel(
+                                    ThinkingLevel.values[i],
+                                  );
+                                  Navigator.of(sheetCtx).pop();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (i + 1 < ThinkingLevel.values.length)
+                              Expanded(
+                                child: _LevelOption(
+                                  level: ThinkingLevel.values[i + 1],
+                                  selected:
+                                      ctrl.thinkingLevel ==
+                                      ThinkingLevel.values[i + 1],
+                                  onTap: () {
+                                    ctrl.setThinkingLevel(
+                                      ThinkingLevel.values[i + 1],
+                                    );
+                                    Navigator.of(sheetCtx).pop();
+                                  },
+                                ),
+                              )
+                            else
+                              const Spacer(),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-              for (final lv in ThinkingLevel.values)
-                ListTile(
-                  leading: Icon(
-                    ctrl.thinkingLevel == lv
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 18,
-                    color: ctrl.thinkingLevel == lv ? c.accent : c.textTertiary,
-                  ),
-                  title: Text(lv.label, style: const TextStyle(fontSize: 14)),
-                  subtitle: Text(
-                    lv.description,
-                    style: TextStyle(fontSize: 11, color: c.textTertiary),
-                  ),
-                  onTap: () {
-                    ctrl.setThinkingLevel(lv);
-                    Navigator.of(sheetCtx).pop();
-                  },
-                ),
-              const SizedBox(height: 8),
-            ],
+              ),
+            ),
           ),
         );
       },
@@ -296,7 +387,10 @@ class _ChatPageState extends State<ChatPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('上下文', style: TextStyle(fontSize: 15, color: c.textPrimary)),
+                Text(
+                  '上下文',
+                  style: TextStyle(fontSize: 15, color: c.textPrimary),
+                ),
                 const SizedBox(height: 12),
                 _kv(c, '当前消息', '$count 条'),
                 _kv(c, '压缩阈值', '$threshold 条'),
@@ -309,7 +403,11 @@ class _ChatPageState extends State<ChatPage> {
                   '超过阈值后，较早的消息会被折叠成一段摘要，'
                   '最近 $keep 条原样保留。\n\n'
                   '阈值可以在「设置 → AI → 上下文压缩阈值」里调整。',
-                  style: TextStyle(fontSize: 11, color: c.textTertiary, height: 1.6),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: c.textTertiary,
+                    height: 1.6,
+                  ),
                 ),
               ],
             ),
@@ -346,9 +444,9 @@ class _ChatPageState extends State<ChatPage> {
     final reason = widget.controller.validateSend();
     if (reason != null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(reason)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(reason)));
       return;
     }
 
@@ -437,9 +535,9 @@ class _ChatPageState extends State<ChatPage> {
 
     final done = await widget.controller.rollback(entry);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(done ? '已恢复' : '撤销失败')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(done ? '已恢复' : '撤销失败')));
   }
 
   /// 撤回：先算出「会被删掉的消息里一共涉及哪些文件」，
@@ -537,9 +635,9 @@ class _ChatPageState extends State<ChatPage> {
     if (!mounted) return;
 
     if (rolledBack < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('撤回失败')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('撤回失败')));
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -569,15 +667,14 @@ class _ChatPageState extends State<ChatPage> {
     final ctrl = widget.controller;
     if (ctrl.busy) return;
 
-    final ok = await ctrl.regenerate(
-      onApproval: _askApproval,
-    );
+    final ok = await ctrl.regenerate(onApproval: _askApproval);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法重新生成：没有可重答的提问')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法重新生成：没有可重答的提问')));
     }
   }
+
   Future<void> _resend(ChatEntry entry) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -813,7 +910,7 @@ class _EntryView extends StatelessWidget {
     required this.onRollback,
     required this.onRecall,
     required this.onResend,
-     required this.onRegenerate,
+    required this.onRegenerate,
     required this.onEdit,
     required this.onDelete,
     required this.busy,
@@ -824,8 +921,8 @@ class _EntryView extends StatelessWidget {
   final VoidCallback onRecall;
   final VoidCallback onResend;
 
-   /// 保留旧回答，再生成一次
-   final VoidCallback onRegenerate;
+  /// 保留旧回答，再生成一次
+  final VoidCallback onRegenerate;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -841,8 +938,9 @@ class _EntryView extends StatelessWidget {
     final row = Padding(
       padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Column(
-        crossAxisAlignment:
-            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           if (!isUser)
             Row(
@@ -853,7 +951,9 @@ class _EntryView extends StatelessWidget {
                   height: 22,
                   margin: const EdgeInsets.only(top: 2),
                   decoration: BoxDecoration(
-                    color: entry.isError ? c.danger.withValues(alpha: 0.12) : c.accentSoft,
+                    color: entry.isError
+                        ? c.danger.withValues(alpha: 0.12)
+                        : c.accentSoft,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: Icon(
@@ -954,9 +1054,7 @@ class _EntryView extends StatelessWidget {
                 leading: const Icon(Icons.history_toggle_off, size: 20),
                 title: Text(entry.isUser ? '撤回这条及之后' : '撤回这条'),
                 subtitle: Text(
-                  entry.isUser
-                      ? '删掉这条提问及其后的全部对话'
-                      : '只删掉这条回复',
+                  entry.isUser ? '删掉这条提问及其后的全部对话' : '只删掉这条回复',
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
                 onTap: () {
@@ -1079,13 +1177,13 @@ class _ToolStripState extends State<_ToolStrip> {
   bool _open = false;
 
   IconData get _icon => switch (widget.record.name) {
-        'list_notes' || 'search_notes' => Icons.lightbulb_outline,
-        'read_note' => Icons.sticky_note_2_outlined,
-        'read_post' => Icons.description_outlined,
-        'write_post' => Icons.edit_note,
-        'fetch_url' => Icons.link,
-        _ => Icons.build_outlined,
-      };
+    'list_notes' || 'search_notes' => Icons.lightbulb_outline,
+    'read_note' => Icons.sticky_note_2_outlined,
+    'read_post' => Icons.description_outlined,
+    'write_post' => Icons.edit_note,
+    'fetch_url' => Icons.link,
+    _ => Icons.build_outlined,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1103,11 +1201,7 @@ class _ToolStripState extends State<_ToolStrip> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  _icon,
-                  size: 12,
-                  color: r.ok ? c.textTertiary : c.danger,
-                ),
+                Icon(_icon, size: 12, color: r.ok ? c.textTertiary : c.danger),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(
@@ -1244,14 +1338,14 @@ class _StreamingBubble extends StatelessWidget {
   }
 
   String _toolLabel(String name) => switch (name) {
-        'list_notes' => '正在列出想法…',
-        'read_note' => '正在读取想法…',
-        'search_notes' => '正在搜索想法…',
-        'read_post' => '正在读取文章…',
-        'write_post' => '准备写入文章…',
-        'fetch_url' => '正在抓取网页…',
-        _ => '正在执行 $name…',
-      };
+    'list_notes' => '正在列出想法…',
+    'read_note' => '正在读取想法…',
+    'search_notes' => '正在搜索想法…',
+    'read_post' => '正在读取文章…',
+    'write_post' => '准备写入文章…',
+    'fetch_url' => '正在抓取网页…',
+    _ => '正在执行 $name…',
+  };
 }
 
 /// 输入框上方：当前端点 · 模型，点击打开快速切换。
@@ -1313,42 +1407,49 @@ class _ModelBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-            children: [
-              Icon(
-                Icons.bolt,
-                size: 12,
-                color: busy ? c.textTertiary : c.accent,
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  busy ? '$label（生成中，暂不可切换）' : label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: busy ? c.textTertiary : c.textSecondary,
+              children: [
+                Icon(
+                  Icons.bolt,
+                  size: 12,
+                  color: busy ? c.textTertiary : c.accent,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    busy ? '$label（生成中，暂不可切换）' : label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: busy ? c.textTertiary : c.textSecondary,
+                    ),
                   ),
                 ),
-              ),
-              Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
-              const SizedBox(width: 3),
-              Text(
-                '切换',
-                style: TextStyle(fontSize: 10, color: c.textTertiary),
-              ),
-            ],
+                Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
+                const SizedBox(width: 3),
+                Text(
+                  '切换',
+                  style: TextStyle(fontSize: 10, color: c.textTertiary),
+                ),
+              ],
             ),
-            _ContextMeter(
-              entryCount: entryCount,
-              threshold: threshold,
-              compressed: compressed,
-              onTap: onContextTap,
-            ),
-            _ThinkingChip(
-              level: thinkingLevel,
-              hint: thinkingHint,
-              onTap: onThinkingTap,
+            Row(
+              children: [
+                Expanded(
+                  child: _ContextMeter(
+                    entryCount: entryCount,
+                    threshold: threshold,
+                    compressed: compressed,
+                    onTap: onContextTap,
+                  ),
+                ),
+                const SizedBox(width: AppSpace.sm),
+                _ThinkingChip(
+                  level: thinkingLevel,
+                  hint: thinkingHint,
+                  onTap: onThinkingTap,
+                ),
+              ],
             ),
           ],
         ),
@@ -1385,15 +1486,16 @@ class _ContextMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final ratio =
-        threshold <= 0 ? 0.0 : (entryCount / threshold).clamp(0.0, 1.0);
+    final ratio = threshold <= 0
+        ? 0.0
+        : (entryCount / threshold).clamp(0.0, 1.0);
 
     // 三档：宽裕 / 接近阈值 / 已压缩过
     final color = compressed
         ? c.danger
         : ratio >= 0.8
-            ? c.warning
-            : c.accent;
+        ? c.warning
+        : c.accent;
 
     return InkWell(
       onTap: onTap,
@@ -1438,14 +1540,90 @@ class _ContextMeter extends StatelessWidget {
   }
 }
 
-/// 思考档位按钮 + 选择器。
+/// 单个档位选项（弹窗里的胶囊）。
 ///
-/// 放在对话页而不是设置页，因为它是**每一轮都可能变**的选项：
-/// 这一句想问深一点，下一句只是查个事实。放进设置页意味着
-/// 每次调整都要离开对话、翻三层菜单，没人会那样用。
+/// 高度固定 60：足够放下「名称 + 一句说明」两行，
+/// 也超过 Material 的 48px 最小触控尺寸，不会误触。
+class _LevelOption extends StatelessWidget {
+  const _LevelOption({
+    required this.level,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ThinkingLevel level;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 60),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? c.accentSoft : c.surface.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: selected ? c.accent.withValues(alpha: 0.5) : c.divider,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 13,
+                  color: selected ? c.accent : c.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  level.label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? c.accent : c.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              level.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9.5,
+                height: 1.25,
+                color: c.textTertiary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 思考档位胶囊按钮。
 ///
-/// 档位和协议分开表达：用户看到的是「深度/平衡/轻量」，
-/// 协议（enable_thinking 还是 reasoning_effort）由端点决定。
+/// 放在对话页而不是设置页，因为它是每一轮都可能变的选项：
+/// 这一句想问深一点，下一句只是查个事实。
+///
+/// ## 尺寸
+///
+/// 视觉高度与命中区域都是 44px。上一版是 fontSize 10 的纯文字
+/// （实测只有 29px 高），远小于 Material 建议的 48px，
+/// 拇指很难按准；44 是「好点」与「不挤占工具栏」的折中。
 class _ThinkingChip extends StatelessWidget {
   const _ThinkingChip({
     required this.level,
@@ -1465,35 +1643,58 @@ class _ThinkingChip extends StatelessWidget {
     final active = level.isThinking;
     // 端点不支持时用灰色，避免让人以为已经生效
     final effective = hint == null;
+    final fg = !effective
+        ? c.textTertiary
+        : (active ? c.accent : c.textSecondary);
 
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 3, bottom: 2),
-        child: Row(
-          children: [
-            Icon(
-              active ? Icons.psychology : Icons.psychology_outlined,
-              size: 10,
-              color: effective
-                  ? (active ? c.accent : c.textTertiary)
-                  : c.textTertiary,
+    return Semantics(
+      button: true,
+      label: '思考档位：${level.label}，点击切换',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: active && effective
+                ? c.accentSoft
+                : c.surface.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(
+              color: active && effective
+                  ? c.accent.withValues(alpha: 0.35)
+                  : c.divider,
+              width: 1,
             ),
-            const SizedBox(width: 4),
-            Text(
-              '思考：${level.label}',
-              style: TextStyle(
-                fontSize: 10,
-                color: effective
-                    ? (active ? c.accent : c.textTertiary)
-                    : c.textTertiary,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                active ? Icons.psychology : Icons.psychology_outlined,
+                size: 15,
+                color: fg,
               ),
-            ),
-            if (!effective) ...[
-              const SizedBox(width: 3),
-              Icon(Icons.info_outline, size: 9, color: c.textTertiary),
+              const SizedBox(width: 5),
+              Text(
+                level.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: active && effective
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                  color: fg,
+                ),
+              ),
+              if (!effective) ...[
+                const SizedBox(width: 3),
+                Icon(Icons.info_outline, size: 11, color: c.textTertiary),
+              ],
+              const SizedBox(width: 1),
+              Icon(Icons.arrow_drop_down, size: 18, color: fg),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1583,12 +1784,7 @@ class _ErrorBar extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: c.danger.withValues(alpha: 0.08),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.md,
-        6,
-        AppSpace.xs,
-        6,
-      ),
+      padding: const EdgeInsets.fromLTRB(AppSpace.md, 6, AppSpace.xs, 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1678,8 +1874,8 @@ class _InputBar extends StatelessWidget {
                     color: busy
                         ? c.textSecondary
                         : (Theme.of(context).brightness == Brightness.light
-                            ? Colors.white
-                            : c.background),
+                              ? Colors.white
+                              : c.background),
                   ),
                 ),
               ),
@@ -1738,9 +1934,7 @@ class _ScopeSheetState extends State<_ScopeSheet> {
               },
             ),
             Text(
-              ctrl.readNotes
-                  ? '读取全部想法（在想法页指定分组可缩小范围）'
-                  : '不读取任何想法',
+              ctrl.readNotes ? '读取全部想法（在想法页指定分组可缩小范围）' : '不读取任何想法',
               style: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.md),
@@ -1831,10 +2025,7 @@ class _HistorySheetState extends State<_HistorySheet> {
                     if (sessions.isNotEmpty)
                       Text(
                         '${sessions.length} 个',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: c.textTertiary,
-                        ),
+                        style: TextStyle(fontSize: 11, color: c.textTertiary),
                       ),
                   ],
                 ),
