@@ -1009,8 +1009,8 @@ class _CompressDialogState extends State<_CompressDialog> {
     super.initState();
     _threshold = widget.threshold;
     _keep = widget.keep;
-    _thresholdCtrl = TextEditingController(text: '$widget.threshold');
-    _keepCtrl = TextEditingController(text: '$widget.keep');
+    _thresholdCtrl = TextEditingController(text: '${widget.threshold}');
+    _keepCtrl = TextEditingController(text: '${widget.keep}');
   }
 
   @override

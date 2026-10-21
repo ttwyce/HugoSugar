@@ -37,6 +37,20 @@ class ReadingPrefs extends ThemeExtension<ReadingPrefs> {
         fontFamily: fontFamily ?? this.fontFamily,
       );
 
+  // 必须实现 ==/hashCode：ThemeData 用它判断主题有没有变。若缺省走
+  // identity 比较，每次新建实例都不相等，虽然能触发重建，但在 lerp /
+  // 主题过渡里会反复判为「变了」造成多余重建；更重要的是部分调用链
+  // 会先做 `oldTheme == newTheme` 短路，正确实现后行为可预期。
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReadingPrefs &&
+          other.fontSize == fontSize &&
+          other.fontFamily == fontFamily;
+
+  @override
+  int get hashCode => Object.hash(fontSize, fontFamily);
+
   @override
   ReadingPrefs lerp(ThemeExtension<ReadingPrefs>? other, double t) {
     if (other is! ReadingPrefs) return this;
