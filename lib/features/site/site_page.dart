@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/post/front_matter.dart';
@@ -98,6 +99,7 @@ class _SitePageState extends State<SitePage> {
       _refreshStatus();
     }
   }
+
   /// 打开推送页。与「文章」页的云上传按钮走同一个入口。
   Future<void> _openPush() async {
     await Navigator.of(context).push(
@@ -116,16 +118,16 @@ class _SitePageState extends State<SitePage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('解绑站点'),
-        content: const Text('会删除本地已克隆的仓库副本，远端仓库不受影响。'),
+        title: Text(context.tr(T('解绑站点'))),
+        content: Text(context.tr(T('会删除本地已克隆的仓库副本，远端仓库不受影响。'))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('解绑', style: TextStyle(color: c.danger)),
+            child: Text(context.tr(T('解绑')), style: TextStyle(color: c.danger)),
           ),
         ],
       ),
@@ -139,28 +141,26 @@ class _SitePageState extends State<SitePage> {
     final cfg = c.config;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('站点')),
+      appBar: AppBar(title: Text(context.tr(T('站点')))),
       body: switch (c.stage) {
         SiteStage.empty => _EmptyView(onConnect: _openConnect),
-        SiteStage.cloning => _CloningView(
-            progress: c.progress,
-          ),
+        SiteStage.cloning => _CloningView(progress: c.progress),
         SiteStage.failed => _FailedView(
-            failure: c.failure,
-            error: c.error ?? '未知错误',
-            onRetry: _openConnect,
-          ),
+          failure: c.failure,
+          error: c.error ?? T('未知错误'),
+          onRetry: _openConnect,
+        ),
         SiteStage.ready => RefreshIndicator(
-            onRefresh: c.refresh,
-            child: _ReadyView(
-              config: cfg!,
-              status: _status,
-              posts: c.posts,
-              onReconnect: _openConnect,
-              onDisconnect: _confirmDisconnect,
-              onPublish: _openPush,
-            ),
+          onRefresh: c.refresh,
+          child: _ReadyView(
+            config: cfg!,
+            status: _status,
+            posts: c.posts,
+            onReconnect: _openConnect,
+            onDisconnect: _confirmDisconnect,
+            onPublish: _openPush,
           ),
+        ),
       },
     );
   }
@@ -185,7 +185,7 @@ class _EmptyView extends StatelessWidget {
             Icon(Icons.folder_outlined, size: 48, color: c.textTertiary),
             const SizedBox(height: AppSpace.md),
             Text(
-              '还没有接入站点',
+              context.tr(T('还没有接入站点')),
               style: TextStyle(
                 fontSize: 16,
                 height: 1.4,
@@ -195,7 +195,7 @@ class _EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              '接入 Hugo 站点仓库后，就能在这里管理文章并推送到 GitHub。',
+              context.tr(T('接入 Hugo 站点仓库后，就能在这里管理文章并推送到 GitHub。')),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -208,7 +208,7 @@ class _EmptyView extends StatelessWidget {
               width: double.infinity,
               child: FilledButton(
                 onPressed: onConnect,
-                child: const Text('接入 Git 仓库'),
+                child: Text(context.tr(T('接入 Git 仓库'))),
               ),
             ),
           ],
@@ -246,7 +246,7 @@ class _CloningView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.md),
             Text(
-              '正在克隆仓库',
+              context.tr(T('正在克隆仓库')),
               style: TextStyle(
                 fontSize: 15,
                 height: 1.4,
@@ -256,7 +256,7 @@ class _CloningView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xxs),
             Text(
-              pct == null ? '连接中…' : '$pct%',
+              pct == null ? T('连接中…') : '$pct%',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
@@ -265,7 +265,7 @@ class _CloningView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.sm),
             Text(
-              '首次克隆可能要几十秒，请保持网络畅通。',
+              context.tr(T('首次克隆可能要几十秒，请保持网络畅通。')),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -297,7 +297,7 @@ class _FailedView extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final f = failure;
-    final title = f?.title ?? '接入失败';
+    final title = f?.title ?? T('接入失败');
     final detail = f?.detail ?? error;
 
     return ListView(
@@ -308,13 +308,7 @@ class _FailedView extends StatelessWidget {
         AppSpace.xxl,
       ),
       children: [
-        Center(
-          child: Icon(
-            _iconFor(f?.kind),
-            size: 40,
-            color: c.danger,
-          ),
-        ),
+        Center(child: Icon(_iconFor(f?.kind), size: 40, color: c.danger)),
         const SizedBox(height: AppSpace.md),
         Text(
           title,
@@ -335,11 +329,7 @@ class _FailedView extends StatelessWidget {
           ),
           child: Text(
             detail,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.7,
-              color: c.textSecondary,
-            ),
+            style: TextStyle(fontSize: 13, height: 1.7, color: c.textSecondary),
           ),
         ),
 
@@ -354,18 +344,14 @@ class _FailedView extends StatelessWidget {
           width: double.infinity,
           child: FilledButton(
             onPressed: onRetry,
-            child: Text(f == null ? '重新接入' : '换个仓库重试'),
+            child: Text(f == null ? T('重新接入') : T('换个仓库重试')),
           ),
         ),
         const SizedBox(height: AppSpace.xs),
         Text(
-          '提示：如果是偶发失败，直接重试通常就能成功。',
+          context.tr(T('提示：如果是偶发失败，直接重试通常就能成功。')),
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 12,
-            height: 1.6,
-            color: c.textTertiary,
-          ),
+          style: TextStyle(fontSize: 12, height: 1.6, color: c.textTertiary),
         ),
       ],
     );
@@ -413,15 +399,14 @@ class _RawErrorTile extends StatelessWidget {
             AppSpace.sm,
             AppSpace.sm,
           ),
-          leading: Icon(Icons.bug_report_outlined,
-              size: 16, color: c.textTertiary),
+          leading: Icon(
+            Icons.bug_report_outlined,
+            size: 16,
+            color: c.textTertiary,
+          ),
           title: Text(
-            '原始错误信息',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.5,
-              color: c.textTertiary,
-            ),
+            context.tr(T('原始错误信息')),
+            style: TextStyle(fontSize: 12, height: 1.5, color: c.textTertiary),
           ),
           children: [
             SizedBox(
@@ -479,7 +464,7 @@ class _ReadyView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        const SectionHeader('当前站点'),
+        SectionHeader(T('当前站点')),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
           child: Container(
@@ -506,20 +491,20 @@ class _ReadyView extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const MiniTag('已连接', emphasized: true),
+                    MiniTag(T('已连接'), emphasized: true),
                   ],
                 ),
                 const SizedBox(height: AppSpace.sm),
-                _InfoRow(label: '仓库', value: config.repoSlug),
+                _InfoRow(label: T('仓库'), value: config.repoSlug),
                 _InfoRow(
-                  label: '分支',
+                  label: T('分支'),
                   value: status?.branch ?? config.branch,
                 ),
-                _InfoRow(label: '文章目录', value: config.postsDir),
-                _InfoRow(label: '文章数', value: '${posts.length} 篇'),
+                _InfoRow(label: T('文章目录'), value: config.postsDir),
+                _InfoRow(label: T('文章数'), value: TP('{} 篇', [posts.length])),
                 _InfoRow(
-                  label: '本地变更',
-                  value: status?.label ?? '读取中…',
+                  label: T('本地变更'),
+                  value: context.tr(status?.label ?? '读取中…'),
                   highlight: status != null && !status!.isClean,
                 ),
               ],
@@ -527,7 +512,7 @@ class _ReadyView extends StatelessWidget {
           ),
         ),
 
-        const SectionHeader('发布'),
+        SectionHeader(T('发布')),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
           child: Column(
@@ -537,12 +522,12 @@ class _ReadyView extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: onPublish,
                   icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                  label: const Text('提交并推送'),
+                  label: Text(context.tr(T('提交并推送'))),
                 ),
               ),
               const SizedBox(height: AppSpace.xs),
               Text(
-                '推送后由 GitHub 监听仓库自动部署，App 不直接触发构建。',
+                context.tr(T('推送后由 GitHub 监听仓库自动部署，App 不直接触发构建。')),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
@@ -554,7 +539,7 @@ class _ReadyView extends StatelessWidget {
         ),
 
         if (posts.isNotEmpty) ...[
-          SectionHeader('文章 · ${posts.length}'),
+          SectionHeader(TP('文章 · {}', [posts.length])),
           // 只显示最近几篇。站点页是个概览，不是文章列表页 ——
           // 全部铺开会把「站点管理」挤到很远，滚动几十屏才能解绑。
           for (var i = 0; i < shownPosts.length; i++) ...[
@@ -591,7 +576,7 @@ class _ReadyView extends StatelessWidget {
               ),
               trailing: shownPosts[i].draft
                   ? Text(
-                      '草稿',
+                      context.tr(T('草稿')),
                       style: TextStyle(fontSize: 11, color: c.textTertiary),
                     )
                   : null,
@@ -606,7 +591,7 @@ class _ReadyView extends StatelessWidget {
                 AppSpace.xs,
               ),
               child: Text(
-                '还有 ${posts.length - shownPosts.length} 篇，在「文章」页查看全部',
+                TP('还有 {} 篇，在「文章」页查看全部', [posts.length - shownPosts.length]),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
@@ -616,19 +601,19 @@ class _ReadyView extends StatelessWidget {
             ),
         ],
 
-        const SectionHeader('站点管理'),
+        SectionHeader(T('站点管理')),
         ListTile(
           leading: const Icon(Icons.sync),
-          title: const Text('重新克隆'),
-          subtitle: const Text('用新地址覆盖本地副本'),
+          title: Text(context.tr(T('重新克隆'))),
+          subtitle: Text(context.tr(T('用新地址覆盖本地副本'))),
           trailing: const Icon(Icons.chevron_right, size: 18),
           onTap: onReconnect,
         ),
         const IndentedDivider(),
         ListTile(
           leading: Icon(Icons.delete_outline, color: c.danger),
-          title: Text('解绑站点', style: TextStyle(color: c.danger)),
-          subtitle: const Text('删除本地副本，远端不受影响'),
+          title: Text(context.tr(T('解绑站点')), style: TextStyle(color: c.danger)),
+          subtitle: Text(context.tr(T('删除本地副本，远端不受影响'))),
           onTap: onDisconnect,
         ),
       ],
@@ -659,7 +644,11 @@ class _InfoRow extends StatelessWidget {
             width: 72,
             child: Text(
               label,
-              style: TextStyle(fontSize: 13, height: 1.5, color: c.textTertiary),
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: c.textTertiary,
+              ),
             ),
           ),
           Expanded(

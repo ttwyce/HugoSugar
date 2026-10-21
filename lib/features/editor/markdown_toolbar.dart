@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 
@@ -49,13 +50,13 @@ class MarkdownToolbar extends StatelessWidget {
           // 撤销 / 重做固定在左侧，不参与横向滚动 —— 这两个用得最频繁
           _ActionBtn(
             label: '↶',
-            tooltip: '撤销',
+            tooltip: context.tr(T('撤销')),
             enabled: canUndo,
             onTap: onUndo,
           ),
           _ActionBtn(
             label: '↷',
-            tooltip: '重做',
+            tooltip: context.tr(T('重做')),
             enabled: canRedo,
             onTap: onRedo,
           ),
@@ -70,25 +71,67 @@ class MarkdownToolbar extends StatelessWidget {
                   _MarkBtn('H2', () => _prefix('## ')),
                   _MarkBtn('H3', () => _prefix('### ')),
                   _sep(c),
-                  _MarkBtn('B', () => _wrap('**', placeholder: '粗体'),
-                      bold: true, tooltip: '粗体'),
-                  _MarkBtn('I', () => _wrap('_', placeholder: '斜体'),
-                      italic: true, tooltip: '斜体'),
-                  _MarkBtn('S', () => _wrap('~~', placeholder: '删除线'),
-                      strike: true, tooltip: '删除线'),
-                  _MarkBtn('</>', () => _wrap('`', placeholder: 'code'),
-                      mono: true, tooltip: '行内代码'),
+                  _MarkBtn(
+                    'B',
+                    () => _wrap('**', placeholder: T('粗体')),
+                    bold: true,
+                    tooltip: context.tr(T('粗体')),
+                  ),
+                  _MarkBtn(
+                    'I',
+                    () => _wrap('_', placeholder: T('斜体')),
+                    italic: true,
+                    tooltip: context.tr(T('斜体')),
+                  ),
+                  _MarkBtn(
+                    'S',
+                    () => _wrap('~~', placeholder: T('删除线')),
+                    strike: true,
+                    tooltip: context.tr(T('删除线')),
+                  ),
+                  _MarkBtn(
+                    '</>',
+                    () => _wrap('`', placeholder: 'code'),
+                    mono: true,
+                    tooltip: context.tr(T('行内代码')),
+                  ),
                   _sep(c),
-                  _MarkBtn('“”', () => _prefix('> '), tooltip: '引用'),
-                  _MarkBtn('•', () => _prefix('- '), tooltip: '无序列表'),
-                  _MarkBtn('1.', () => _prefix('1. '), tooltip: '有序列表'),
+                  _MarkBtn(
+                    '“”',
+                    () => _prefix('> '),
+                    tooltip: context.tr(T('引用')),
+                  ),
+                  _MarkBtn(
+                    '•',
+                    () => _prefix('- '),
+                    tooltip: context.tr(T('无序列表')),
+                  ),
+                  _MarkBtn(
+                    '1.',
+                    () => _prefix('1. '),
+                    tooltip: context.tr(T('有序列表')),
+                  ),
                   _sep(c),
-                  _MarkBtn('🔗', () => _apply(MarkdownInsert.link), tooltip: '链接'),
-                  _MarkBtn('▦', () => _apply(MarkdownInsert.table), tooltip: '表格'),
-                  _MarkBtn('—', () => _insertAtCursor('\n---\n'),
-                      tooltip: '分隔线'),
-                  _MarkBtn('💡', () => _prefix('> [!note] '),
-                      tooltip: '提示块'),
+                  _MarkBtn(
+                    '🔗',
+                    () => _apply(MarkdownInsert.link),
+                    tooltip: context.tr(T('链接')),
+                  ),
+                  _MarkBtn(
+                    '▦',
+                    () => _apply(MarkdownInsert.table),
+                    tooltip: context.tr(T('表格')),
+                  ),
+                  _MarkBtn(
+                    '—',
+                    () => _insertAtCursor('\n---\n'),
+                    tooltip: context.tr(T('分隔线')),
+                  ),
+                  _MarkBtn(
+                    '💡',
+                    () => _prefix('> [!note] '),
+                    tooltip: context.tr(T('提示块')),
+                  ),
                   const SizedBox(width: 4),
                 ],
               ),
@@ -97,7 +140,7 @@ class MarkdownToolbar extends StatelessWidget {
           if (onDismissKeyboard != null)
             _ActionBtn(
               label: '⌄',
-              tooltip: '收起键盘',
+              tooltip: context.tr(T('收起键盘')),
               enabled: true,
               onTap: onDismissKeyboard,
             ),
@@ -107,11 +150,11 @@ class MarkdownToolbar extends StatelessWidget {
   }
 
   Widget _sep(AppColors c) => Container(
-        width: 0.5,
-        height: 18,
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        color: c.divider,
-      );
+    width: 0.5,
+    height: 18,
+    margin: const EdgeInsets.symmetric(horizontal: 6),
+    color: c.divider,
+  );
 
   void _apply(TextEditingValue Function(TextEditingValue) fn) {
     final v = fn(controller.value);
@@ -214,7 +257,9 @@ class _ActionBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 17,
               height: 1.2,
-              color: enabled ? c.textPrimary : c.textTertiary.withValues(alpha: 0.4),
+              color: enabled
+                  ? c.textPrimary
+                  : c.textTertiary.withValues(alpha: 0.4),
             ),
           ),
         ),

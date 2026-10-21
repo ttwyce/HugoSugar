@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/site/github_api.dart';
@@ -96,7 +97,7 @@ class _TokenDialogState extends State<TokenDialog> {
               Row(
                 children: [
                   Text(
-                    'GitHub 访问令牌',
+                    context.tr(T('GitHub 访问令牌')),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -106,13 +107,13 @@ class _TokenDialogState extends State<TokenDialog> {
                   const Spacer(),
                   TextButton(
                     onPressed: _busy ? null : _save,
-                    child: Text(_busy ? '校验中…' : '保存'),
+                    child: Text(_busy ? T('校验中…') : T('保存')),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpace.xs),
               Text(
-                '整个 App 只需要填这一次。站点接入和推送都会自动复用。',
+                context.tr(T('整个 App 只需要填这一次。站点接入和推送都会自动复用。')),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.6,
@@ -143,7 +144,7 @@ class _TokenDialogState extends State<TokenDialog> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '已保存：$_savedMask',
+                          TP('已保存：{}', [_savedMask]),
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'monospace',
@@ -157,7 +158,10 @@ class _TokenDialogState extends State<TokenDialog> {
                           foregroundColor: c.danger,
                           visualDensity: VisualDensity.compact,
                         ),
-                        child: const Text('清除', style: TextStyle(fontSize: 12)),
+                        child: Text(
+                          context.tr(T('清除')),
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -170,9 +174,9 @@ class _TokenDialogState extends State<TokenDialog> {
                 enableSuggestions: false,
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'ghp_... 或 github_pat_...',
+                  hintText: context.tr(T('ghp_... 或 github_pat_...')),
                   hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
-                  helperText: '需要 repo 权限（读写仓库内容）',
+                  helperText: T('需要 repo 权限（读写仓库内容）'),
                   helperStyle: TextStyle(fontSize: 11, color: c.textTertiary),
                   filled: true,
                   fillColor: c.surface,
@@ -221,7 +225,7 @@ class _TokenDialogState extends State<TokenDialog> {
   Future<void> _save() async {
     final token = _ctrl.text.trim();
     if (token.isEmpty) {
-      setState(() => _error = '请输入令牌');
+      setState(() => _error = T('请输入令牌'));
       return;
     }
 
@@ -244,7 +248,7 @@ class _TokenDialogState extends State<TokenDialog> {
         _busy = false;
         _savedMask = maskToken(token);
         _ctrl.clear();
-        _notice = '已验证为 $login，已保存';
+        _notice = TP('已验证为 {}，已保存', [login]);
       });
     } on GitHubException catch (e) {
       if (!mounted) return;
@@ -267,7 +271,7 @@ class _TokenDialogState extends State<TokenDialog> {
     if (!mounted) return;
     setState(() {
       _savedMask = null;
-      _notice = '已清除令牌';
+      _notice = T('已清除令牌');
     });
   }
 }

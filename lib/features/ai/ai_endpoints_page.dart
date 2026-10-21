@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/ai/ai_client.dart';
@@ -42,10 +43,10 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI 端点'),
+        title: Text(context.tr(T('AI 端点'))),
         actions: [
           IconButton(
-            tooltip: '添加',
+            tooltip: context.tr(T('添加')),
             onPressed: _add,
             icon: const Icon(Icons.add),
           ),
@@ -78,7 +79,7 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
               child: Padding(
                 padding: const EdgeInsets.all(AppSpace.md),
                 child: Text(
-                  '当前使用：${cfg.active?.name ?? '-'}',
+                  TP('当前使用：{}', [cfg.active?.name ?? '-']),
                   style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
               ),
@@ -110,19 +111,19 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('删除端点'),
-        content: Text('删除「${ep.name}」？它的 API Key 也会一起删掉。'),
+        title: Text(context.tr(T('删除端点'))),
+        content: Text(TP('删除「{}」？它的 API Key 也会一起删掉。', [ep.name])),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: context.appColors.danger,
             ),
-            child: const Text('删除'),
+            child: Text(context.tr(T('删除'))),
           ),
         ],
       ),
@@ -151,7 +152,7 @@ class _EmptyHint extends StatelessWidget {
             Icon(Icons.smart_toy_outlined, size: 44, color: c.textTertiary),
             const SizedBox(height: AppSpace.md),
             Text(
-              '还没有配置 AI 端点',
+              context.tr(T('还没有配置 AI 端点')),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -160,8 +161,7 @@ class _EmptyHint extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              '填一个兼容 OpenAI 协议的地址就能用。\n'
-              'OpenAI、DeepSeek、各家中转站、本地 Ollama 都支持。',
+              T('填一个兼容 OpenAI 协议的地址就能用。\nOpenAI、DeepSeek、各家中转站、本地 Ollama 都支持。'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -170,7 +170,7 @@ class _EmptyHint extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpace.lg),
-            FilledButton(onPressed: onAdd, child: const Text('添加端点')),
+            FilledButton(onPressed: onAdd, child: Text(context.tr(T('添加端点')))),
           ],
         ),
       ),
@@ -247,12 +247,15 @@ class _EndpointCard extends StatelessWidget {
                       if (v == 'edit') onEdit();
                       if (v == 'delete') onDelete();
                     },
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) => [
                       PopupMenuItem(
                         value: 'edit',
-                        child: Text('编辑（地址 / Key / 模型）'),
+                        child: Text(context.tr(T('编辑（地址 / Key / 模型）'))),
                       ),
-                      PopupMenuItem(value: 'delete', child: Text('删除')),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(context.tr(T('删除'))),
+                      ),
                     ],
                   ),
                 ],
@@ -273,7 +276,7 @@ class _EndpointCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      endpoint.model.isEmpty ? '未选择模型' : endpoint.model,
+                      endpoint.model.isEmpty ? T('未选择模型') : endpoint.model,
                       style: TextStyle(fontSize: 11, color: c.textSecondary),
                     ),
                   ),
@@ -290,7 +293,7 @@ class _EndpointCard extends StatelessWidget {
                     ),
                   ] else
                     Text(
-                      '未填 Key',
+                      context.tr(T('未填 Key')),
                       style: TextStyle(fontSize: 11, color: c.danger),
                     ),
                 ],
@@ -380,7 +383,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isEdit ? '编辑端点' : '添加端点',
+                  _isEdit ? T('编辑端点') : T('添加端点'),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -391,9 +394,9 @@ class _EndpointEditorState extends State<_EndpointEditor> {
 
                 TextField(
                   controller: _name,
-                  decoration: const InputDecoration(
-                    labelText: '名称',
-                    helperText: '随便起，比如「DeepSeek」「备用」',
+                  decoration: InputDecoration(
+                    labelText: context.tr(T('名称')),
+                    helperText: T('随便起，比如「DeepSeek」「备用」'),
                   ),
                 ),
                 const SizedBox(height: AppSpace.sm),
@@ -402,10 +405,10 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                   controller: _baseUrl,
                   keyboardType: TextInputType.url,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: '接口地址',
+                  decoration: InputDecoration(
+                    labelText: context.tr(T('接口地址')),
                     hintText: 'https://api.openai.com/v1',
-                    helperText: '填到 /v1 就行，不用写 /chat/completions',
+                    helperText: T('填到 /v1 就行，不用写 /chat/completions'),
                     helperMaxLines: 2,
                   ),
                 ),
@@ -418,10 +421,10 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                   enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'API Key',
-                    hintText: _isEdit ? '留空则不修改' : 'sk-...',
+                    hintText: _isEdit ? T('留空则不修改') : 'sk-...',
                     helperText: _isEdit && widget.existing!.keyHint.isNotEmpty
-                        ? '已保存：${widget.existing!.keyHint}'
-                        : '存在应用私有目录，权限 0600',
+                        ? TP('已保存：{}', [widget.existing!.keyHint])
+                        : T('存在应用私有目录，权限 0600'),
                     helperMaxLines: 2,
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -443,8 +446,8 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                       child: TextField(
                         controller: _model,
                         autocorrect: false,
-                        decoration: const InputDecoration(
-                          labelText: '模型',
+                        decoration: InputDecoration(
+                          labelText: context.tr(T('模型')),
                           hintText: 'gpt-4o-mini',
                         ),
                       ),
@@ -462,7 +465,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                         ),
                         child: Text(
-                          _loadingModels ? '获取中' : '获取列表',
+                          _loadingModels ? T('获取中') : T('获取列表'),
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -486,7 +489,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          '思考深度在对话页选，这里不用管',
+                          context.tr(T('思考深度在对话页选，这里不用管')),
                           style: TextStyle(fontSize: 11, color: c.textTertiary),
                         ),
                       ),
@@ -496,7 +499,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                 if (chatModels.isNotEmpty) ...[
                   const SizedBox(height: AppSpace.sm),
                   Text(
-                    '点选模型（已过滤掉 embedding/tts 等不能对话的）',
+                    context.tr(T('点选模型（已过滤掉 embedding/tts 等不能对话的）')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                   const SizedBox(height: 6),
@@ -570,14 +573,14 @@ class _EndpointEditorState extends State<_EndpointEditor> {
                         onPressed: _busy
                             ? null
                             : () => Navigator.of(context).pop(false),
-                        child: const Text('取消'),
+                        child: Text(context.tr(T('取消'))),
                       ),
                     ),
                     const SizedBox(width: AppSpace.sm),
                     Expanded(
                       child: FilledButton(
                         onPressed: _busy ? null : _save,
-                        child: Text(_busy ? '保存中…' : '保存'),
+                        child: Text(_busy ? T('保存中…') : T('保存')),
                       ),
                     ),
                   ],
@@ -593,7 +596,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
   Future<void> _loadModels() async {
     final base = _baseUrl.text.trim();
     if (base.isEmpty) {
-      setState(() => _error = '先填接口地址');
+      setState(() => _error = T('先填接口地址'));
       return;
     }
 
@@ -621,7 +624,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         _models = models;
         _loadingModels = false;
         if (models.isEmpty) {
-          _error = '这个端点没有返回任何模型，可以直接手填模型名';
+          _error = T('这个端点没有返回任何模型，可以直接手填模型名');
         }
       });
     } on AiException catch (e) {
@@ -629,7 +632,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
       setState(() {
         _loadingModels = false;
         // 拿不到列表不算致命：允许手填模型名
-        _error = '${e.message}\n${e.hint ?? "可以直接手动填写模型名"}';
+        _error = TP('{}\n{}', [e.message, e.hint ?? "可以直接手动填写模型名"]);
       });
     } catch (e) {
       if (!mounted) return;
@@ -647,11 +650,11 @@ class _EndpointEditorState extends State<_EndpointEditor> {
   Future<void> _save() async {
     final base = _baseUrl.text.trim();
     if (base.isEmpty) {
-      setState(() => _error = '请填写接口地址');
+      setState(() => _error = T('请填写接口地址'));
       return;
     }
     if (!base.startsWith('http://') && !base.startsWith('https://')) {
-      setState(() => _error = '接口地址要以 http:// 或 https:// 开头');
+      setState(() => _error = T('接口地址要以 http:// 或 https:// 开头'));
       return;
     }
 

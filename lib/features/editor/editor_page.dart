@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_theme.dart';
+import '../../app/theme/reading_prefs.dart';
 import '../../core/edit/undo_history.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
@@ -117,7 +119,7 @@ class _EditorPageState extends State<EditorPage> {
     if (doc == null) {
       setState(() {
         _loading = false;
-        _loadError = '无法读取文件：$path';
+        _loadError = TP('无法读取文件：{}', [path]);
         _ready = true;
       });
       return;
@@ -257,7 +259,7 @@ class _EditorPageState extends State<EditorPage> {
       if (!quiet) {
         setState(() {
           _saveState = _SaveState.idle;
-          _saveError = '这篇稿件还没有文件路径，无法保存';
+          _saveError = T('这篇稿件还没有文件路径，无法保存');
         });
       }
       return;
@@ -410,7 +412,8 @@ class _EditorPageState extends State<EditorPage> {
     final start = _matches[_matchIndex];
     final end = start + _findCtrl.text.length;
     final text = _bodyCtrl.text;
-    final replaced = '${text.substring(0, start)}${_replaceCtrl.text}'
+    final replaced =
+        '${text.substring(0, start)}${_replaceCtrl.text}'
         '${text.substring(end)}';
     _bodyCtrl.value = TextEditingValue(
       text: replaced,
@@ -433,9 +436,9 @@ class _EditorPageState extends State<EditorPage> {
     _bodyCtrl.text = text.replaceAll(q, _replaceCtrl.text);
     _recomputeMatches();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已替换 $count 处')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(TP('已替换 {} 处', [count]))));
   }
 
   // ── 界面 ─────────────────────────────────────────
@@ -473,7 +476,7 @@ class _EditorPageState extends State<EditorPage> {
                         isDense: true,
                         filled: false,
                         contentPadding: EdgeInsets.zero,
-                        hintText: '标题',
+                        hintText: context.tr(T('标题')),
                         hintStyle: AppTypography.editorTitle.copyWith(
                           color: c.textTertiary,
                         ),
@@ -489,7 +492,7 @@ class _EditorPageState extends State<EditorPage> {
                     Row(
                       children: [
                         Text(
-                          _original?.statusLabel ?? '草稿',
+                          _original?.statusLabel ?? T('草稿'),
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
@@ -500,7 +503,7 @@ class _EditorPageState extends State<EditorPage> {
                         Text('·', style: TextStyle(color: c.textTertiary)),
                         const SizedBox(width: AppSpace.xs),
                         Text(
-                          _loading ? '读取中…' : '$_charCount 字',
+                          _loading ? T('读取中…') : TP('{} 字', [_charCount]),
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
@@ -520,18 +523,19 @@ class _EditorPageState extends State<EditorPage> {
                         ),
                       ),
                     ],
-                    if (_findOpen) _FindBar(
-                      findCtrl: _findCtrl,
-                      replaceCtrl: _replaceCtrl,
-                      matchCount: _matches.length,
-                      current: _matches.isEmpty ? 0 : _matchIndex + 1,
-                      onChanged: _recomputeMatches,
-                      onPrev: () => _findNext(backwards: true),
-                      onNext: _findNext,
-                      onReplace: _replaceCurrent,
-                      onReplaceAll: _replaceAll,
-                      onClose: _toggleFind,
-                    ),
+                    if (_findOpen)
+                      _FindBar(
+                        findCtrl: _findCtrl,
+                        replaceCtrl: _replaceCtrl,
+                        matchCount: _matches.length,
+                        current: _matches.isEmpty ? 0 : _matchIndex + 1,
+                        onChanged: _recomputeMatches,
+                        onPrev: () => _findNext(backwards: true),
+                        onNext: _findNext,
+                        onReplace: _replaceCurrent,
+                        onReplaceAll: _replaceAll,
+                        onClose: _toggleFind,
+                      ),
                     const SizedBox(height: AppSpace.md),
                     // 正文
                     Expanded(
@@ -543,15 +547,19 @@ class _EditorPageState extends State<EditorPage> {
                         expands: true,
                         textAlignVertical: TextAlignVertical.top,
                         keyboardType: TextInputType.multiline,
-                        style: AppTypography.editorBody.copyWith(
-                          color: c.textPrimary,
+                        style: context.reading.apply(
+                          AppTypography.editorBody.copyWith(
+                            color: c.textPrimary,
+                          ),
                         ),
                         decoration: InputDecoration(
                           filled: false,
                           contentPadding: EdgeInsets.zero,
-                          hintText: '正文…',
-                          hintStyle: AppTypography.editorBody.copyWith(
-                            color: c.textTertiary,
+                          hintText: context.tr(T('正文…')),
+                          hintStyle: context.reading.apply(
+                            AppTypography.editorBody.copyWith(
+                              color: c.textTertiary,
+                            ),
                           ),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -561,9 +569,7 @@ class _EditorPageState extends State<EditorPage> {
                     ),
                     // 给固定显示的底部区域留高度：工具栏 46 + 状态行 44 + 底部安全区
                     SizedBox(
-                      height: 46 +
-                          44 +
-                          MediaQuery.of(context).padding.bottom,
+                      height: 46 + 44 + MediaQuery.of(context).padding.bottom,
                     ),
                   ],
                 ),
@@ -591,25 +597,25 @@ class _EditorPageState extends State<EditorPage> {
                         }
                       },
                       icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                      tooltip: '返回',
+                      tooltip: context.tr(T('返回')),
                     ),
                     const Spacer(),
                     IconButton(
                       onPressed: _showMetaSheet,
                       icon: const Icon(Icons.tune, size: 20),
-                      tooltip: '文章信息（分类/标签/日期）',
+                      tooltip: context.tr(T('文章信息（分类/标签/日期）')),
                     ),
                     // 更多操作：删除等低频但危险的操作收进来，避免误触
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.more_horiz, size: 20),
-                      tooltip: '更多',
+                      tooltip: context.tr(T('更多')),
                       onSelected: (v) {
                         if (v == 'delete') _deleteCurrentPost();
                       },
-                      itemBuilder: (_) => const [
+                      itemBuilder: (_) => [
                         PopupMenuItem(
                           value: 'delete',
-                          child: Text('删除文章'),
+                          child: Text(context.tr(T('删除文章'))),
                         ),
                       ],
                     ),
@@ -619,12 +625,12 @@ class _EditorPageState extends State<EditorPage> {
                         _findOpen ? Icons.search_off : Icons.search,
                         size: 20,
                       ),
-                      tooltip: '查找替换',
+                      tooltip: context.tr(T('查找替换')),
                     ),
                     IconButton(
                       onPressed: () => _save(),
                       icon: const Icon(Icons.save_outlined, size: 20),
-                      tooltip: '保存',
+                      tooltip: context.tr(T('保存')),
                     ),
                   ],
                 ),
@@ -662,7 +668,7 @@ class _EditorPageState extends State<EditorPage> {
                       child: Row(
                         children: [
                           Text(
-                            '$_charCount 字',
+                            TP('{} 字', [_charCount]),
                             style: TextStyle(
                               fontSize: 12,
                               height: 1.4,
@@ -670,10 +676,7 @@ class _EditorPageState extends State<EditorPage> {
                             ),
                           ),
                           const SizedBox(width: AppSpace.xs),
-                          _SaveIndicator(
-                            state: _saveState,
-                            error: _saveError,
-                          ),
+                          _SaveIndicator(state: _saveState, error: _saveError),
                           const Spacer(),
                           TextButton.icon(
                             onPressed: _showPreviewSoon,
@@ -681,7 +684,7 @@ class _EditorPageState extends State<EditorPage> {
                               Icons.visibility_outlined,
                               size: 16,
                             ),
-                            label: const Text('预览'),
+                            label: Text(context.tr(T('预览'))),
                           ),
                           const SizedBox(width: AppSpace.xxs),
                           TextButton.icon(
@@ -707,8 +710,8 @@ class _EditorPageState extends State<EditorPage> {
   /// 现在明确告诉用户「还没做」，比假装响应诚实。
   void _showPreviewSoon() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对'),
+      SnackBar(
+        content: Text(context.tr(T('预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对'))),
         duration: Duration(seconds: 2),
       ),
     );
@@ -716,13 +719,14 @@ class _EditorPageState extends State<EditorPage> {
 
   void _showAiSoon() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('写作 AI 在 M5 提供'),
+      SnackBar(
+        content: Text(context.tr(T('写作 AI 在 M5 提供'))),
         duration: Duration(seconds: 2),
       ),
     );
   }
-/// 文章信息面板
+
+  /// 文章信息面板
   ///
   /// 可改：草稿状态、日期、分类、标签、简介。
   /// 这些全部是 Front Matter 字段，改完立即写回文件。
@@ -731,7 +735,7 @@ class _EditorPageState extends State<EditorPage> {
 
     if (doc == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('这篇文章还没有加载完成，稍后再试')),
+        SnackBar(content: Text(context.tr(T('这篇文章还没有加载完成，稍后再试')))),
       );
       return;
     }
@@ -793,20 +797,19 @@ class _EditorPageState extends State<EditorPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除这篇文章？'),
+        title: Text(context.tr(T('删除这篇文章？'))),
         content: Text(
-          '文件将被永久删除：\n$path\n\n'
-          '这是本地文件删除，Git 仓库里的历史记录不受影响。',
+          TP('文件将被永久删除：\n{}\n\n这是本地文件删除，Git 仓库里的历史记录不受影响。', [path]),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: c.danger),
-            child: const Text('删除'),
+            child: Text(context.tr(T('删除'))),
           ),
         ],
       ),
@@ -823,12 +826,12 @@ class _EditorPageState extends State<EditorPage> {
     if (deleted) {
       _deleted = true;
       Navigator.of(context).maybePop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('文章已删除')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('文章已删除')))));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败：${ctrl.error ?? "未知错误"}')),
+        SnackBar(content: Text(TP('删除失败：{}', [ctrl.error ?? "未知错误"]))),
       );
     }
   }
@@ -847,11 +850,15 @@ class _SaveIndicator extends StatelessWidget {
     final c = context.appColors;
 
     final (icon, text, color) = switch (state) {
-      _SaveState.idle => (Icons.cloud_done_outlined, '已同步', c.textTertiary),
-      _SaveState.dirty => (Icons.edit_outlined, '未保存', c.textTertiary),
-      _SaveState.saving => (Icons.sync, '保存中…', c.textTertiary),
-      _SaveState.saved => (Icons.check_circle_outline, '已保存', c.textTertiary),
-      _SaveState.failed => (Icons.error_outline, '保存失败', c.danger),
+      _SaveState.idle => (Icons.cloud_done_outlined, T('已同步'), c.textTertiary),
+      _SaveState.dirty => (Icons.edit_outlined, T('未保存'), c.textTertiary),
+      _SaveState.saving => (Icons.sync, T('保存中…'), c.textTertiary),
+      _SaveState.saved => (
+        Icons.check_circle_outline,
+        T('已保存'),
+        c.textTertiary,
+      ),
+      _SaveState.failed => (Icons.error_outline, T('保存失败'), c.danger),
     };
 
     return Row(
@@ -859,10 +866,7 @@ class _SaveIndicator extends StatelessWidget {
       children: [
         Icon(icon, size: 13, color: color),
         const SizedBox(width: 3),
-        Text(
-          text,
-          style: TextStyle(fontSize: 12, height: 1.4, color: color),
-        ),
+        Text(text, style: TextStyle(fontSize: 12, height: 1.4, color: color)),
         if (error != null) ...[
           const SizedBox(width: AppSpace.xxs),
           Tooltip(
@@ -923,17 +927,19 @@ class _FindBar extends StatelessWidget {
                   onChanged: (_) => onChanged(),
                   autofocus: true,
                   style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: '查找',
+                  decoration: InputDecoration(
+                    hintText: context.tr(T('查找')),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 4),
               Text(
-                matchCount == 0 ? '无' : '$current/$matchCount',
+                matchCount == 0 ? T('无') : '$current/$matchCount',
                 style: TextStyle(fontSize: 11, color: c.textTertiary),
               ),
               IconButton(
@@ -960,11 +966,13 @@ class _FindBar extends StatelessWidget {
                 child: TextField(
                   controller: replaceCtrl,
                   style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: '替换为',
+                  decoration: InputDecoration(
+                    hintText: context.tr(T('替换为')),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),
@@ -976,7 +984,10 @@ class _FindBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 32),
                 ),
-                child: const Text('替换', style: TextStyle(fontSize: 12)),
+                child: Text(
+                  context.tr(T('替换')),
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               TextButton(
                 onPressed: matchCount == 0 ? null : onReplaceAll,
@@ -985,7 +996,10 @@ class _FindBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 32),
                 ),
-                child: const Text('全部', style: TextStyle(fontSize: 12)),
+                child: Text(
+                  context.tr(T('全部')),
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
             ],
           ),
@@ -1020,7 +1034,8 @@ class _MetaSheet extends StatefulWidget {
     List<String> categories,
     List<String> tags,
     String description,
-  ) onSave;
+  )
+  onSave;
 
   @override
   State<_MetaSheet> createState() => _MetaSheetState();
@@ -1031,8 +1046,9 @@ class _MetaSheetState extends State<_MetaSheet> {
   late DateTime? _date = widget.doc.date;
   late List<String> _categories = [...widget.doc.categories];
   late List<String> _tags = [...widget.doc.tags];
-  late final TextEditingController _descCtrl =
-      TextEditingController(text: widget.doc.description);
+  late final TextEditingController _descCtrl = TextEditingController(
+    text: widget.doc.description,
+  );
 
   final _catCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
@@ -1068,7 +1084,7 @@ class _MetaSheetState extends State<_MetaSheet> {
               Row(
                 children: [
                   Text(
-                    '文章信息',
+                    context.tr(T('文章信息')),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1078,7 +1094,7 @@ class _MetaSheetState extends State<_MetaSheet> {
                   const Spacer(),
                   TextButton(
                     onPressed: _saving ? null : _submit,
-                    child: Text(_saving ? '保存中…' : '保存'),
+                    child: Text(_saving ? T('保存中…') : T('保存')),
                   ),
                 ],
               ),
@@ -1088,16 +1104,16 @@ class _MetaSheetState extends State<_MetaSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _draft,
-                title: const Text('草稿'),
+                title: Text(context.tr(T('草稿'))),
                 subtitle: Text(
-                  _draft ? 'Hugo 构建时不会输出这篇' : '已发布，构建时会输出',
+                  _draft ? T('Hugo 构建时不会输出这篇') : T('已发布，构建时会输出'),
                   style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
                 onChanged: (v) => setState(() => _draft = v),
               ),
 
               const SizedBox(height: AppSpace.xs),
-              _label('发布日期', c),
+              _label(T('发布日期'), c),
               const SizedBox(height: 4),
               InkWell(
                 onTap: _pickDate,
@@ -1120,7 +1136,7 @@ class _MetaSheetState extends State<_MetaSheet> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        _date == null ? '未设置（保存时自动填今天）' : _fmt(_date!),
+                        _date == null ? T('未设置（保存时自动填今天）') : _fmt(_date!),
                         style: TextStyle(
                           fontSize: 13,
                           color: _date == null ? c.textTertiary : c.textPrimary,
@@ -1142,29 +1158,29 @@ class _MetaSheetState extends State<_MetaSheet> {
               ),
 
               const SizedBox(height: AppSpace.md),
-              _label('分类', c),
+              _label(T('分类'), c),
               const SizedBox(height: 6),
               ChipEditor(
                 values: _categories,
                 allValues: widget.allCategories,
-                hint: '添加分类，回车确认',
+                hint: T('添加分类，回车确认'),
                 controller: _catCtrl,
                 onChanged: (v) => setState(() => _categories = v),
               ),
 
               const SizedBox(height: AppSpace.md),
-              _label('标签', c),
+              _label(T('标签'), c),
               const SizedBox(height: 6),
               ChipEditor(
                 values: _tags,
                 allValues: widget.allTags,
-                hint: '添加标签，回车确认',
+                hint: T('添加标签，回车确认'),
                 controller: _tagCtrl,
                 onChanged: (v) => setState(() => _tags = v),
               ),
 
               const SizedBox(height: AppSpace.md),
-              _label('简介（description）', c),
+              _label(T('简介（description）'), c),
               const SizedBox(height: 6),
               TextField(
                 controller: _descCtrl,
@@ -1172,7 +1188,7 @@ class _MetaSheetState extends State<_MetaSheet> {
                 minLines: 2,
                 style: const TextStyle(fontSize: 13, height: 1.5),
                 decoration: InputDecoration(
-                  hintText: '留空则用正文开头做摘要',
+                  hintText: context.tr(T('留空则用正文开头做摘要')),
                   hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
                   filled: true,
                   fillColor: c.surface,
@@ -1186,12 +1202,20 @@ class _MetaSheetState extends State<_MetaSheet> {
 
               const SizedBox(height: AppSpace.md),
               Text(
-                '文件：${widget.doc.relativePath}',
-                style: TextStyle(fontSize: 11, height: 1.6, color: c.textTertiary),
+                TP('文件：{}', [widget.doc.relativePath]),
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.6,
+                  color: c.textTertiary,
+                ),
               ),
               Text(
-                '格式：${widget.doc.format.toUpperCase()}',
-                style: TextStyle(fontSize: 11, height: 1.6, color: c.textTertiary),
+                TP('格式：{}', [widget.doc.format.toUpperCase()]),
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.6,
+                  color: c.textTertiary,
+                ),
               ),
             ],
           ),
@@ -1201,13 +1225,13 @@ class _MetaSheetState extends State<_MetaSheet> {
   }
 
   Widget _label(String s, AppColors c) => Text(
-        s,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: c.textSecondary,
-        ),
-      );
+    s,
+    style: TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: c.textSecondary,
+    ),
+  );
 
   String _fmt(DateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');
@@ -1222,7 +1246,7 @@ class _MetaSheetState extends State<_MetaSheet> {
       initialDate: base,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
-      helpText: '选择发布日期',
+      helpText: T('选择发布日期'),
     );
     if (picked == null || !mounted) return;
 
@@ -1258,13 +1282,13 @@ class _MetaSheetState extends State<_MetaSheet> {
 
     if (ok) {
       Navigator.of(context).maybePop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('文章信息已保存')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('文章信息已保存')))));
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存失败，请查看底部状态')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('保存失败，请查看底部状态')))));
     }
   }
 

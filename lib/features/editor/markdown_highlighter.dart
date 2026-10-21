@@ -86,10 +86,7 @@ class MarkdownHighlighter {
     }
 
     // ── 3) 标题 # ## ### ──
-    final heading = RegExp(
-      r'^(#{1,6})[ \t]+.*$',
-      multiLine: true,
-    );
+    final heading = RegExp(r'^(#{1,6})[ \t]+.*$', multiLine: true);
     for (final m in heading.allMatches(text)) {
       final level = m.group(1)!.length;
       add(
@@ -105,17 +102,25 @@ class MarkdownHighlighter {
 
     // ── 4) 引用 > ──
     for (final m in RegExp(r'^[ \t]*>.*$', multiLine: true).allMatches(text)) {
-      add(m.start, m.end, baseT.copyWith(color: dim, fontStyle: FontStyle.italic));
+      add(
+        m.start,
+        m.end,
+        baseT.copyWith(color: dim, fontStyle: FontStyle.italic),
+      );
     }
 
     // ── 5) 列表符号 - * + 1. ──
-    for (final m in RegExp(r'^[ \t]*([-*+]|\d+\.)[ \t]', multiLine: true)
-        .allMatches(text)) {
+    for (final m in RegExp(
+      r'^[ \t]*([-*+]|\d+\.)[ \t]',
+      multiLine: true,
+    ).allMatches(text)) {
       add(m.start, m.end, baseT.copyWith(color: accent.withValues(alpha: 0.8)));
     }
 
     // ── 6) 粗体 **x** / __x__ ──
-    for (final m in RegExp(r'(\*\*|__)(?=\S)[\s\S]*?(?<=\S)\1').allMatches(text)) {
+    for (final m in RegExp(
+      r'(\*\*|__)(?=\S)[\s\S]*?(?<=\S)\1',
+    ).allMatches(text)) {
       add(
         m.start,
         m.end,
@@ -124,9 +129,14 @@ class MarkdownHighlighter {
     }
 
     // ── 7) 斜体 *x* / _x_（注意不能吃掉粗体的星号）──
-    for (final m in RegExp(r'(?<![*_])([*_])(?=\S)[^*_\n]*?(?<=\S)\1(?![*_])')
-        .allMatches(text)) {
-      add(m.start, m.end, baseT.copyWith(color: base, fontStyle: FontStyle.italic));
+    for (final m in RegExp(
+      r'(?<![*_])([*_])(?=\S)[^*_\n]*?(?<=\S)\1(?![*_])',
+    ).allMatches(text)) {
+      add(
+        m.start,
+        m.end,
+        baseT.copyWith(color: base, fontStyle: FontStyle.italic),
+      );
     }
 
     // ── 8) 删除线 ~~x~~ ──
@@ -134,10 +144,7 @@ class MarkdownHighlighter {
       add(
         m.start,
         m.end,
-        baseT.copyWith(
-          color: dim,
-          decoration: TextDecoration.lineThrough,
-        ),
+        baseT.copyWith(color: dim, decoration: TextDecoration.lineThrough),
       );
     }
 
@@ -147,8 +154,10 @@ class MarkdownHighlighter {
     }
 
     // ── 10) 水平线 --- ──
-    for (final m in RegExp(r'^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$', multiLine: true)
-        .allMatches(text)) {
+    for (final m in RegExp(
+      r'^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$',
+      multiLine: true,
+    ).allMatches(text)) {
       add(m.start, m.end, baseT.copyWith(color: dim));
     }
 
@@ -197,7 +206,9 @@ class MarkdownHighlighter {
       if (h.start > cursor) {
         children.add(TextSpan(text: text.substring(cursor, h.start)));
       }
-      children.add(TextSpan(text: text.substring(h.start, h.end), style: h.style));
+      children.add(
+        TextSpan(text: text.substring(h.start, h.end), style: h.style),
+      );
       cursor = h.end;
     }
 

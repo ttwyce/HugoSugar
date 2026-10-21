@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/agent_runner.dart';
@@ -106,17 +107,17 @@ class _ChatPageState extends State<ChatPage> {
         ),
         actions: [
           IconButton(
-            tooltip: '端点管理',
+            tooltip: context.tr(T('端点管理')),
             onPressed: _openEndpoints,
             icon: const Icon(Icons.smart_toy_outlined),
           ),
           IconButton(
-            tooltip: '历史对话',
+            tooltip: context.tr(T('历史对话')),
             onPressed: _openHistory,
             icon: const Icon(Icons.history),
           ),
           IconButton(
-            tooltip: '新对话',
+            tooltip: context.tr(T('新对话')),
             onPressed: ctrl.busy ? null : _newChat,
             icon: const Icon(Icons.add_comment_outlined),
           ),
@@ -254,7 +255,7 @@ class _ChatPageState extends State<ChatPage> {
                     Row(
                       children: [
                         Text(
-                          '思考档位',
+                          context.tr(T('思考档位')),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -388,21 +389,23 @@ class _ChatPageState extends State<ChatPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '上下文',
+                  context.tr(T('上下文')),
                   style: TextStyle(fontSize: 15, color: c.textPrimary),
                 ),
                 const SizedBox(height: 12),
-                _kv(c, '当前消息', '$count 条'),
-                _kv(c, '压缩阈值', '$threshold 条'),
-                _kv(c, '保留最近', '$keep 条'),
-                if (compressed) _kv(c, '上次请求', '已折叠 $dropped 条��消息'),
+                _kv(c, T('当前消息'), TP('{} 条', [count])),
+                _kv(c, T('压缩阈值'), TP('{} 条', [threshold])),
+                _kv(c, T('保留最近'), TP('{} 条', [keep])),
+                if (compressed)
+                  _kv(c, T('上次请求'), TP('已折叠 {} 条��消息', [dropped])),
                 if (ctrl.lastSentTokens > 0)
-                  _kv(c, '上次估算 token', '约 ${ctrl.lastSentTokens}'),
+                  _kv(c, T('上次估算 token'), TP('约 {}', [ctrl.lastSentTokens])),
                 const SizedBox(height: 12),
                 Text(
-                  '超过阈值后，较早的消息会被折叠成一段摘要，'
-                  '最近 $keep 条原样保留。\n\n'
-                  '阈值可以在「设置 → AI → 上下文压缩阈值」里调整。',
+                  TP(
+                    '超过阈值后，较早的消息会被折叠成一段摘要，最近 {} 条原样保留。\n\n阈值可以在「设置 → AI → 上下文压缩阈值」里调整。',
+                    [keep],
+                  ),
                   style: TextStyle(
                     fontSize: 11,
                     color: c.textTertiary,
@@ -488,9 +491,9 @@ class _ChatPageState extends State<ChatPage> {
   /// AppBar 第二行文字：`端点 · 模型`
   String _modelLabel(AiController ctrl) {
     final ep = ctrl.activeEndpoint;
-    if (ep == null) return '未配置端点';
+    if (ep == null) return T('未配置端点');
     final model = ep.model.trim();
-    return model.isEmpty ? '${ep.name} · 未选模型' : '${ep.name} · $model';
+    return model.isEmpty ? TP('{} · 未选模型', [ep.name]) : '${ep.name} · $model';
   }
 
   Future<void> _openHistory() async {
@@ -514,19 +517,20 @@ class _ChatPageState extends State<ChatPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('撤销这次写入'),
+        title: Text(context.tr(T('撤销这次写入'))),
         content: Text(
-          '将恢复：\n${entry.backups.map((b) => b.relPath).join('\n')}\n\n'
-          '这会覆盖当前文件内容，不可再撤销。',
+          TP('将恢复：\n{}\n\n这会覆盖当前文件内容，不可再撤销。', [
+            entry.backups.map((b) => b.relPath).join('\n'),
+          ]),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('撤销'),
+            child: Text(context.tr(T('撤销'))),
           ),
         ],
       ),
@@ -537,7 +541,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(done ? '已恢复' : '撤销失败')));
+    ).showSnackBar(SnackBar(content: Text(done ? T('已恢复') : T('撤销失败'))));
   }
 
   /// 撤回：先算出「会被删掉的消息里一共涉及哪些文件」，
@@ -565,21 +569,21 @@ class _ChatPageState extends State<ChatPage> {
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('撤回对话'),
+        title: Text(context.tr(T('撤回对话'))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               isUser
-                  ? '将删除这条提问及其之后的 ${removed.length} 条消息。'
-                  : '将只删除这条回复，上面的提问会保留。',
+                  ? TP('将删除这条提问及其之后的 {} 条消息。', [removed.length])
+                  : T('将只删除这条回复，上面的提问会保留。'),
               style: const TextStyle(fontSize: 13, height: 1.5),
             ),
             if (files.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
-                '这段对话写过 ${files.length} 个文件：',
+                TP('这段对话写过 {} 个文件：', [files.length]),
                 style: TextStyle(
                   fontSize: 12,
                   color: ctx.appColors.textTertiary,
@@ -610,16 +614,16 @@ class _ChatPageState extends State<ChatPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           if (files.isNotEmpty)
             TextButton(
               onPressed: () => Navigator.of(ctx).pop('keep'),
-              child: const Text('只删对话'),
+              child: Text(context.tr(T('只删对话'))),
             ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop('rollback'),
-            child: Text(files.isEmpty ? '撤回' : '对话和文件一起回滚'),
+            child: Text(files.isEmpty ? T('撤回') : T('对话和文件一起回滚')),
           ),
         ],
       ),
@@ -637,15 +641,15 @@ class _ChatPageState extends State<ChatPage> {
     if (rolledBack < 0) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('撤回失败')));
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('撤回失败')))));
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           choice == 'rollback' && rolledBack > 0
-              ? '已撤回对话，并恢复 $rolledBack 个文件'
-              : '已撤回对话',
+              ? TP('已撤回对话，并恢复 {} 个文件', [rolledBack])
+              : T('已撤回对话'),
         ),
       ),
     );
@@ -671,7 +675,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!ok && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无法重新生成：没有可重答的提问')));
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('无法重新生成：没有可重答的提问')))));
     }
   }
 
@@ -679,19 +683,16 @@ class _ChatPageState extends State<ChatPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重新发送'),
-        content: const Text(
-          '会撤回这条提问及其后的全部对话，然后原样再问一次。\n'
-          '这段对话写过的文件会一并回滚。',
-        ),
+        title: Text(context.tr(T('重新发送'))),
+        content: Text(T('会撤回这条提问及其后的全部对话，然后原样再问一次。\n这段对话写过的文件会一并回滚。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('重发'),
+            child: Text(context.tr(T('重发'))),
           ),
         ],
       ),
@@ -709,13 +710,13 @@ class _ChatPageState extends State<ChatPage> {
     final newText = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('编辑后重发'),
+        title: Text(context.tr(T('编辑后重发'))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '保存后会撤回这条及之后的对话，并回滚相关文件，再按新内容提问。',
+              context.tr(T('保存后会撤回这条及之后的对话，并回滚相关文件，再按新内容提问。')),
               style: TextStyle(
                 fontSize: 12,
                 height: 1.5,
@@ -742,11 +743,11 @@ class _ChatPageState extends State<ChatPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text),
-            child: const Text('保存并重发'),
+            child: Text(context.tr(T('保存并重发'))),
           ),
         ],
       ),
@@ -773,19 +774,19 @@ class _ChatPageState extends State<ChatPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除这条'),
-        content: const Text('只从对话里移除，不改动任何文件。'),
+        title: Text(context.tr(T('删除这条'))),
+        content: Text(context.tr(T('只从对话里移除，不改动任何文件。'))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: context.appColors.danger,
             ),
-            child: const Text('删除'),
+            child: Text(context.tr(T('删除'))),
           ),
         ],
       ),
@@ -830,7 +831,7 @@ class _NeedEndpoint extends StatelessWidget {
             Icon(Icons.smart_toy_outlined, size: 44, color: c.textTertiary),
             const SizedBox(height: AppSpace.md),
             Text(
-              '先配置一个 AI 端点',
+              context.tr(T('先配置一个 AI 端点')),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -839,7 +840,7 @@ class _NeedEndpoint extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              '兼容 OpenAI 协议的地址都可以，\n可以配多个随时切换。',
+              context.tr(T('兼容 OpenAI 协议的地址都可以，\n可以配多个随时切换。')),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -848,7 +849,7 @@ class _NeedEndpoint extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpace.lg),
-            FilledButton(onPressed: onAdd, child: const Text('去配置')),
+            FilledButton(onPressed: onAdd, child: Text(context.tr(T('去配置')))),
           ],
         ),
       ),
@@ -874,7 +875,7 @@ class _EmptyChat extends StatelessWidget {
             Icon(Icons.auto_awesome, size: 32, color: c.accent),
             const SizedBox(height: AppSpace.md),
             Text(
-              '开始一次对话',
+              context.tr(T('开始一次对话')),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -883,13 +884,12 @@ class _EmptyChat extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              model.isEmpty ? '未选择模型' : '$endpoint · $model',
+              model.isEmpty ? T('未选择模型') : '$endpoint · $model',
               style: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.lg),
             Text(
-              '试试：「根据我的想法写一篇关于 XX 的短文」\n'
-              '或直接把一个网址发给我',
+              T('试试：「根据我的想法写一篇关于 XX 的短文」\n或直接把一个网址发给我'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -1006,16 +1006,16 @@ class _EntryView extends StatelessWidget {
                   AppSpace.xs,
                 ),
                 child: Text(
-                  entry.isUser ? '这条提问' : '这条回复',
+                  entry.isUser ? T('这条提问') : T('这条回复'),
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
               ),
               if (entry.isUser) ...[
                 ListTile(
                   leading: const Icon(Icons.edit_outlined, size: 20),
-                  title: const Text('编辑后重发'),
+                  title: Text(context.tr(T('编辑后重发'))),
                   subtitle: Text(
-                    '改完会撤回这条及之后的对话，并回滚相关文件',
+                    context.tr(T('改完会撤回这条及之后的对话，并回滚相关文件')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                   onTap: () {
@@ -1025,9 +1025,9 @@ class _EntryView extends StatelessWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.refresh, size: 20),
-                  title: const Text('原样重发'),
+                  title: Text(context.tr(T('原样重发'))),
                   subtitle: Text(
-                    '撤回这条及之后，再问一次',
+                    context.tr(T('撤回这条及之后，再问一次')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                   onTap: () {
@@ -1039,9 +1039,9 @@ class _EntryView extends StatelessWidget {
               if (!entry.isUser)
                 ListTile(
                   leading: const Icon(Icons.autorenew, size: 20),
-                  title: const Text('再生成一次'),
+                  title: Text(context.tr(T('再生成一次'))),
                   subtitle: Text(
-                    '保留这条回答，重新问一遍（不回滚文件）',
+                    context.tr(T('保留这条回答，重新问一遍（不回滚文件）')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                   onTap: () {
@@ -1052,9 +1052,9 @@ class _EntryView extends StatelessWidget {
               // 撤回：user 消息撤回「这条之后」；assistant 消息撤回「这条」
               ListTile(
                 leading: const Icon(Icons.history_toggle_off, size: 20),
-                title: Text(entry.isUser ? '撤回这条及之后' : '撤回这条'),
+                title: Text(entry.isUser ? T('撤回这条及之后') : T('撤回这条')),
                 subtitle: Text(
-                  entry.isUser ? '删掉这条提问及其后的全部对话' : '只删掉这条回复',
+                  entry.isUser ? T('删掉这条提问及其后的全部对话') : T('只删掉这条回复'),
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
                 onTap: () {
@@ -1065,9 +1065,9 @@ class _EntryView extends StatelessWidget {
               if (entry.canRollback)
                 ListTile(
                   leading: Icon(Icons.undo, size: 20, color: c.accent),
-                  title: Text('撤销写入（${entry.backups.length} 个文件）'),
+                  title: Text(TP('撤销写入（{} 个文件）', [entry.backups.length])),
                   subtitle: Text(
-                    '把这条回复写过的文件恢复原样，对话保留',
+                    context.tr(T('把这条回复写过的文件恢复原样，对话保留')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                   onTap: () {
@@ -1077,9 +1077,12 @@ class _EntryView extends StatelessWidget {
                 ),
               ListTile(
                 leading: Icon(Icons.delete_outline, size: 20, color: c.danger),
-                title: Text('删除这条', style: TextStyle(color: c.danger)),
+                title: Text(
+                  context.tr(T('删除这条')),
+                  style: TextStyle(color: c.danger),
+                ),
                 subtitle: Text(
-                  '不动文件，只从对话里移除',
+                  context.tr(T('不动文件，只从对话里移除')),
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
                 onTap: () {
@@ -1136,7 +1139,7 @@ class _EntryView extends StatelessWidget {
                   onPressed: onRollback,
                   icon: const Icon(Icons.undo, size: 14),
                   label: Text(
-                    '撤销写入（${e.backups.length} 个文件）',
+                    TP('撤销写入（{} 个文件）', [e.backups.length]),
                     style: const TextStyle(fontSize: 11),
                   ),
                   style: TextButton.styleFrom(
@@ -1154,8 +1157,11 @@ class _EntryView extends StatelessWidget {
             child: Text(
               // 服务端给了 usage 才是真值；没给是我们按字数估的。
               // 必须标出来 —— 把估算值当精确统计展示是误导。
-              '${e.promptTokens ?? 0} 入 / ${e.completionTokens ?? 0} 出 token'
-              '${e.usageIsExact ? '' : '（估算）'}',
+              TP('{} 入 / {} 出 token', [
+                    e.promptTokens ?? 0,
+                    e.completionTokens ?? 0,
+                  ]) +
+                  (e.usageIsExact ? '' : T('（估算）')),
               style: TextStyle(fontSize: 10, color: c.textTertiary),
             ),
           ),
@@ -1236,7 +1242,7 @@ class _ToolStripState extends State<_ToolStrip> {
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: SelectableText(
-                  '参数：${r.arguments}\n\n${r.detail}',
+                  TP('参数：{}\n\n{}', [r.arguments, r.detail]),
                   style: TextStyle(
                     fontSize: 11,
                     height: 1.5,
@@ -1339,14 +1345,14 @@ class _StreamingBubble extends StatelessWidget {
   }
 
   String _toolLabel(String name) => switch (name) {
-    'list_notes' => '正在列出想法…',
-    'read_note' => '正在读取想法…',
-    'search_notes' => '正在搜索想法…',
-    'save_note' => '正在保存想法…',
-    'read_post' => '正在读取文章…',
-    'write_post' => '准备写入文章…',
-    'fetch_url' => '正在抓取网页…',
-    _ => '正在执行 $name…',
+    'list_notes' => T('正在列出想法…'),
+    'read_note' => T('正在读取想法…'),
+    'search_notes' => T('正在搜索想法…'),
+    'save_note' => T('正在保存想法…'),
+    'read_post' => T('正在读取文章…'),
+    'write_post' => T('准备写入文章…'),
+    'fetch_url' => T('正在抓取网页…'),
+    _ => TP('正在执行 {}…', [name]),
   };
 }
 
@@ -1418,7 +1424,7 @@ class _ModelBar extends StatelessWidget {
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
-                    busy ? '$label（生成中，暂不可切换）' : label,
+                    busy ? TP('{}（生成中，暂不可切换）', [label]) : label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -1430,7 +1436,7 @@ class _ModelBar extends StatelessWidget {
                 Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
                 const SizedBox(width: 3),
                 Text(
-                  '切换',
+                  context.tr(T('切换')),
                   style: TextStyle(fontSize: 10, color: c.textTertiary),
                 ),
               ],
@@ -1512,7 +1518,7 @@ class _ContextMeter extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             Text(
-              compressed ? '已压缩' : '上下文',
+              compressed ? T('已压缩') : T('上下文'),
               style: TextStyle(fontSize: 10, color: c.textTertiary),
             ),
             const SizedBox(width: 6),
@@ -1529,7 +1535,7 @@ class _ContextMeter extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              '$entryCount / $threshold 条',
+              TP('{} / {} 条', [entryCount, threshold]),
               style: TextStyle(
                 fontSize: 10,
                 color: compressed ? c.danger : c.textTertiary,
@@ -1651,7 +1657,7 @@ class _ThinkingChip extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: '思考档位：${level.label}，点击切换',
+      label: TP('思考档位：{}，点击切换', [level.label]),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -1716,7 +1722,7 @@ class _ContextBar extends StatelessWidget {
     final sel = controller.lastContext;
     final String label;
     if (sel == null) {
-      label = '尚未发送，想法读取范围未生效';
+      label = T('尚未发送，想法读取范围未生效');
     } else {
       label = sel.describe();
     }
@@ -1756,7 +1762,7 @@ class _ContextBar extends StatelessWidget {
               Icon(Icons.compress, size: 11, color: c.textTertiary),
               const SizedBox(width: 3),
               Text(
-                '已折叠 $dropped 条',
+                TP('已折叠 {} 条', [dropped]),
                 style: TextStyle(fontSize: 10, color: c.textTertiary),
               ),
             ],
@@ -1857,7 +1863,7 @@ class _InputBar extends StatelessWidget {
                 // 根本不会干扰正在进行的那一轮（发送按钮此时是停止键）。
                 // 真正需要防的是「误触发送」，那由按钮状态负责。
                 style: TextStyle(fontSize: 14, color: c.textPrimary),
-                decoration: const InputDecoration(hintText: '说点什么…'),
+                decoration: InputDecoration(hintText: context.tr(T('说点什么…'))),
               ),
             ),
             const SizedBox(width: AppSpace.xs),
@@ -1913,7 +1919,7 @@ class _ScopeSheetState extends State<_ScopeSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'AI 读取想法的范围',
+              context.tr(T('AI 读取想法的范围')),
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -1922,13 +1928,16 @@ class _ScopeSheetState extends State<_ScopeSheet> {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              '想法是私人内容，默认不读。打开后才允许读取。',
+              context.tr(T('想法是私人内容，默认不读。打开后才允许读取。')),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.sm),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('允许读取想法', style: TextStyle(fontSize: 14)),
+              title: Text(
+                context.tr(T('允许读取想法')),
+                style: TextStyle(fontSize: 14),
+              ),
               value: ctrl.readNotes,
               onChanged: (v) {
                 ctrl.setReadScope(enabled: v);
@@ -1936,7 +1945,7 @@ class _ScopeSheetState extends State<_ScopeSheet> {
               },
             ),
             Text(
-              ctrl.readNotes ? '读取全部想法（在想法页指定分组可缩小范围）' : '不读取任何想法',
+              ctrl.readNotes ? T('读取全部想法（在想法页指定分组可缩小范围）') : T('不读取任何想法'),
               style: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.md),
@@ -1944,7 +1953,7 @@ class _ScopeSheetState extends State<_ScopeSheet> {
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('完成'),
+                child: Text(context.tr(T('完成'))),
               ),
             ),
           ],
@@ -2012,7 +2021,7 @@ class _HistorySheetState extends State<_HistorySheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        '历史对话',
+                        context.tr(T('历史对话')),
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -2021,7 +2030,7 @@ class _HistorySheetState extends State<_HistorySheet> {
                       ),
                     ),
                     IconButton(
-                      tooltip: '管理分组',
+                      tooltip: context.tr(T('管理分组')),
                       icon: Icon(
                         Icons.create_new_folder_outlined,
                         size: 18,
@@ -2035,9 +2044,9 @@ class _HistorySheetState extends State<_HistorySheet> {
                 // 两个页签：活跃 / 已归档
                 Row(
                   children: [
-                    _tabButton('活跃 $activeCount', 0, c),
+                    _tabButton(TP('活跃 {}', [activeCount]), 0, c),
                     const SizedBox(width: 8),
-                    _tabButton('已归档 $archivedCount', 1, c),
+                    _tabButton(TP('已归档 {}', [archivedCount]), 1, c),
                   ],
                 ),
                 const SizedBox(height: AppSpace.sm),
@@ -2087,7 +2096,7 @@ class _HistorySheetState extends State<_HistorySheet> {
     final ungrouped = ctrl.ungroupedSessions;
 
     if (ctrl.activeSessions.isEmpty) {
-      return _emptyHint('还没有历史对话', c);
+      return _emptyHint(T('还没有历史对话'), c);
     }
 
     // 先算好所有段落，再一次性展开成 sliver 列表。
@@ -2103,7 +2112,7 @@ class _HistorySheetState extends State<_HistorySheet> {
       }
     }
     if (ungrouped.isNotEmpty) {
-      rows.add(_sectionHeader('未分组', ungrouped.length, c));
+      rows.add(_sectionHeader(T('未分组'), ungrouped.length, c));
       for (final s in ungrouped) {
         rows.add(_sessionTile(s, c, archived: false));
       }
@@ -2115,7 +2124,7 @@ class _HistorySheetState extends State<_HistorySheet> {
   Widget _buildArchivedList(AppColors c) {
     final list = widget.controller.archivedSessions;
     if (list.isEmpty) {
-      return _emptyHint('没有已归档的对话', c);
+      return _emptyHint(T('没有已归档的对话'), c);
     }
     return ListView(
       shrinkWrap: true,
@@ -2186,7 +2195,7 @@ class _HistorySheetState extends State<_HistorySheet> {
         color: active ? c.accent : c.textTertiary,
       ),
       title: Text(
-        s.title.isEmpty ? '未命名' : s.title,
+        s.title.isEmpty ? T('未命名') : s.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -2195,7 +2204,7 @@ class _HistorySheetState extends State<_HistorySheet> {
         ),
       ),
       subtitle: Text(
-        '${s.entries.length} 条 · ${_fmtTime(s.updatedAt)}',
+        TP('{} 条 · {}', [s.entries.length, _fmtTime(s.updatedAt)]),
         style: TextStyle(fontSize: 11, color: c.textTertiary),
       ),
       // 长按移动分组：只加长按不加按钮，
@@ -2207,7 +2216,7 @@ class _HistorySheetState extends State<_HistorySheet> {
         children: [
           if (!archived)
             IconButton(
-              tooltip: '归档',
+              tooltip: context.tr(T('归档')),
               icon: Icon(
                 Icons.archive_outlined,
                 size: 16,
@@ -2220,7 +2229,7 @@ class _HistorySheetState extends State<_HistorySheet> {
             )
           else ...[
             IconButton(
-              tooltip: '恢复',
+              tooltip: context.tr(T('恢复')),
               icon: Icon(
                 Icons.unarchive_outlined,
                 size: 16,
@@ -2232,7 +2241,7 @@ class _HistorySheetState extends State<_HistorySheet> {
               },
             ),
             IconButton(
-              tooltip: '彻底删除',
+              tooltip: context.tr(T('彻底删除')),
               icon: Icon(Icons.delete_outline, size: 16, color: c.danger),
               onPressed: () => _confirmDelete(s),
             ),
@@ -2264,7 +2273,7 @@ class _HistorySheetState extends State<_HistorySheet> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '移动到分组',
+                  context.tr(T('移动到分组')),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -2281,7 +2290,7 @@ class _HistorySheetState extends State<_HistorySheet> {
                 size: 18,
                 color: c.textTertiary,
               ),
-              title: const Text('未分组', style: TextStyle(fontSize: 13)),
+              title: Text(context.tr(T('未分组')), style: TextStyle(fontSize: 13)),
               trailing: s.groupId.isEmpty
                   ? Icon(Icons.check, size: 16, color: c.accent)
                   : null,
@@ -2291,7 +2300,7 @@ class _HistorySheetState extends State<_HistorySheet> {
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '还没有分组，点右上角文件夹图标新建',
+                  context.tr(T('还没有分组，点右上角文件夹图标新建')),
                   style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
               )
@@ -2338,19 +2347,19 @@ class _HistorySheetState extends State<_HistorySheet> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('彻底删除这个对话？'),
+        title: Text(context.tr(T('彻底删除这个对话？'))),
         content: Text(
-          '「${s.title.isEmpty ? '未命名' : s.title}」将被永久删除，无法恢复。',
+          TP('「{}」将被永久删除，无法恢复。', [s.title.isEmpty ? T('未命名') : s.title]),
           style: const TextStyle(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(true),
-            child: Text('删除', style: TextStyle(color: c.danger)),
+            child: Text(context.tr(T('删除')), style: TextStyle(color: c.danger)),
           ),
         ],
       ),
@@ -2383,7 +2392,10 @@ class _HistorySheetState extends State<_HistorySheet> {
           children: [
             ListTile(
               leading: const Icon(Icons.edit_outlined, size: 18),
-              title: const Text('重命名分组', style: TextStyle(fontSize: 13)),
+              title: Text(
+                context.tr(T('重命名分组')),
+                style: TextStyle(fontSize: 13),
+              ),
               onTap: () {
                 Navigator.of(bctx).pop();
                 _renameGroup(group);
@@ -2392,11 +2404,11 @@ class _HistorySheetState extends State<_HistorySheet> {
             ListTile(
               leading: Icon(Icons.delete_outline, size: 18, color: c.danger),
               title: Text(
-                '删除分组',
+                context.tr(T('删除分组')),
                 style: TextStyle(fontSize: 13, color: c.danger),
               ),
-              subtitle: const Text(
-                '不删除对话，只把它们移回未分组',
+              subtitle: Text(
+                context.tr(T('不删除对话，只把它们移回未分组')),
                 style: TextStyle(fontSize: 11),
               ),
               onTap: () {
@@ -2416,7 +2428,7 @@ class _HistorySheetState extends State<_HistorySheet> {
     final name = await showDialog<String>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('重命名分组'),
+        title: Text(context.tr(T('重命名分组'))),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -2425,11 +2437,11 @@ class _HistorySheetState extends State<_HistorySheet> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(ctrl.text),
-            child: const Text('确定'),
+            child: Text(context.tr(T('确定'))),
           ),
         ],
       ),
@@ -2443,10 +2455,10 @@ class _HistorySheetState extends State<_HistorySheet> {
   String _fmtTime(DateTime t) {
     final now = DateTime.now();
     final diff = now.difference(t);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 30) return '${diff.inDays} 天前';
+    if (diff.inMinutes < 1) return T('刚刚');
+    if (diff.inHours < 1) return TP('{} 分钟前', [diff.inMinutes]);
+    if (diff.inDays < 1) return TP('{} 小时前', [diff.inHours]);
+    if (diff.inDays < 30) return TP('{} 天前', [diff.inDays]);
     return '${t.year}-${t.month.toString().padLeft(2, '0')}-'
         '${t.day.toString().padLeft(2, '0')}';
   }
@@ -2482,7 +2494,7 @@ class _GroupSheetState extends State<_GroupSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        '对话分组',
+                        context.tr(T('对话分组')),
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -2492,7 +2504,10 @@ class _GroupSheetState extends State<_GroupSheet> {
                     ),
                     TextButton.icon(
                       icon: const Icon(Icons.add, size: 16),
-                      label: const Text('新建', style: TextStyle(fontSize: 12)),
+                      label: Text(
+                        context.tr(T('新建')),
+                        style: TextStyle(fontSize: 12),
+                      ),
                       onPressed: () => _create(context),
                     ),
                   ],
@@ -2503,7 +2518,7 @@ class _GroupSheetState extends State<_GroupSheet> {
                     child: SizedBox(
                       width: double.infinity,
                       child: Text(
-                        '还没有分组',
+                        context.tr(T('还没有分组')),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
@@ -2538,7 +2553,7 @@ class _GroupSheetState extends State<_GroupSheet> {
                             style: const TextStyle(fontSize: 13),
                           ),
                           subtitle: Text(
-                            '$count 个对话',
+                            TP('{} 个对话', [count]),
                             style: TextStyle(
                               fontSize: 11,
                               color: c.textTertiary,
@@ -2585,20 +2600,23 @@ class _GroupSheetState extends State<_GroupSheet> {
     final name = await showDialog<String>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('新建分组'),
+        title: Text(context.tr(T('新建分组'))),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '例如：写作辅助', isDense: true),
+          decoration: InputDecoration(
+            hintText: context.tr(T('例如：写作辅助')),
+            isDense: true,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(ctrl.text),
-            child: const Text('创建'),
+            child: Text(context.tr(T('创建'))),
           ),
         ],
       ),
@@ -2614,7 +2632,7 @@ class _GroupSheetState extends State<_GroupSheet> {
     final name = await showDialog<String>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('重命名分组'),
+        title: Text(context.tr(T('重命名分组'))),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -2623,11 +2641,11 @@ class _GroupSheetState extends State<_GroupSheet> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(ctrl.text),
-            child: const Text('确定'),
+            child: Text(context.tr(T('确定'))),
           ),
         ],
       ),

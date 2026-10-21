@@ -237,6 +237,8 @@ grep -E 'Built |FAILURE|rror:' build.log
 | `docs/ARM64_BUILD_TROUBLESHOOTING.md` | **原生插件构建问题完整手册** |
 | `docs/FEATURE_SPEC.md` | 功能与需求方案（v4，依赖清单已校正） |
 | `docs/DESIGN_SPEC.md` | UI 设计规范 |
+| `lib/app/i18n/strings.dart` | 中英文案唯一真相源（中文当 key） |
+| `lib/app/i18n/l10n_scope.dart` | `tr/T/TP` 取词入口 |
 
 > ⚠️ **依赖名易混，务必看清：是 `git2dart`，不是 `libgit2dart`。**
 > `libgit2dart` 已 DISCONTINUED，且只支持 64 位 Linux/macOS/Windows，

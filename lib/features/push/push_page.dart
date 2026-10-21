@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/site/commit_message.dart';
@@ -36,7 +37,6 @@ class _PushPageState extends State<PushPage> {
   /// 执行日志，倒序显示（最新的在上面）
   final List<String> _log = [];
 
-
   @override
   void initState() {
     super.initState();
@@ -59,7 +59,7 @@ class _PushPageState extends State<PushPage> {
       _tokenMask = saved == null
           ? null
           : '${saved.substring(0, (saved.length * 0.3).ceil())}••••'
-              '${saved.substring(saved.length - 4)}';
+                '${saved.substring(saved.length - 4)}';
     });
   }
 
@@ -87,12 +87,12 @@ class _PushPageState extends State<PushPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('推送到 GitHub'),
+        title: Text(context.tr(T('推送到 GitHub'))),
         actions: [
           IconButton(
             onPressed: _busy ? null : _refresh,
             icon: const Icon(Icons.refresh, size: 20),
-            tooltip: '重新读取变更',
+            tooltip: context.tr(T('重新读取变更')),
           ),
         ],
       ),
@@ -106,21 +106,19 @@ class _PushPageState extends State<PushPage> {
                     context,
                     icon: Icons.warning_amber_outlined,
                     color: c.danger,
-                    title: '落后远端 ${div.behind} 个提交',
-                    body: '远端有本地没有的改动。直接推送会被拒绝，'
-                        '请先到「站点」页重新克隆同步。',
+                    title: TP('落后远端 {} 个提交', [div.behind]),
+                    body: T('远端有本地没有的改动。直接推送会被拒绝，请先到「站点」页重新克隆同步。'),
                   ),
                 if (conflicts.isNotEmpty)
                   _banner(
                     context,
                     icon: Icons.error_outline,
                     color: c.danger,
-                    title: '${conflicts.length} 个文件存在合并冲突',
-                    body: '冲突未解决前无法提交。请在电脑上处理冲突，'
-                        '或重新克隆一份干净的仓库。',
+                    title: TP('{} 个文件存在合并冲突', [conflicts.length]),
+                    body: T('冲突未解决前无法提交。请在电脑上处理冲突，或重新克隆一份干净的仓库。'),
                   ),
 
-                const SectionHeader('变更'),
+                SectionHeader(T('变更')),
                 if (_changes.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -130,7 +128,7 @@ class _PushPageState extends State<PushPage> {
                       AppSpace.md,
                     ),
                     child: Text(
-                      '没有未提交的改动。',
+                      context.tr(T('没有未提交的改动。')),
                       style: TextStyle(
                         fontSize: 13,
                         height: 1.6,
@@ -147,14 +145,14 @@ class _PushPageState extends State<PushPage> {
                       AppSpace.xs,
                     ),
                     child: Text(
-                      '共 ${_changes.length} 个文件',
+                      TP('共 {} 个文件', [_changes.length]),
                       style: TextStyle(fontSize: 12, color: c.textTertiary),
                     ),
                   ),
                   for (final ch in _changes) _changeRow(context, ch),
                 ],
 
-                const SectionHeader('提交说明'),
+                SectionHeader(T('提交说明')),
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpace.md,
@@ -166,11 +164,8 @@ class _PushPageState extends State<PushPage> {
                     minLines: 2,
                     style: const TextStyle(fontSize: 14, height: 1.5),
                     decoration: InputDecoration(
-                      hintText: '这次改了什么',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: c.textTertiary,
-                      ),
+                      hintText: context.tr(T('这次改了什么')),
+                      hintStyle: TextStyle(fontSize: 13, color: c.textTertiary),
                       filled: true,
                       fillColor: c.surface,
                       border: OutlineInputBorder(
@@ -182,7 +177,7 @@ class _PushPageState extends State<PushPage> {
                   ),
                 ),
 
-                const SectionHeader('访问令牌'),
+                SectionHeader(T('访问令牌')),
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpace.md,
@@ -195,7 +190,7 @@ class _PushPageState extends State<PushPage> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(
-                            '已保存：$_tokenMask（点下方输入框可替换）',
+                            TP('已保存：{}（点下方输入框可替换）', [_tokenMask]),
                             style: TextStyle(
                               fontSize: 12,
                               color: c.textTertiary,
@@ -208,8 +203,8 @@ class _PushPageState extends State<PushPage> {
                         style: const TextStyle(fontSize: 13),
                         decoration: InputDecoration(
                           hintText: _tokenMask == null
-                              ? 'ghp_... 需要 repo 权限'
-                              : '留空则使用已保存的令牌',
+                              ? T('ghp_... 需要 repo 权限')
+                              : T('留空则使用已保存的令牌'),
                           hintStyle: TextStyle(
                             fontSize: 13,
                             color: c.textTertiary,
@@ -232,9 +227,8 @@ class _PushPageState extends State<PushPage> {
                                   : Icons.visibility_outlined,
                               size: 18,
                             ),
-                            onPressed: () => setState(
-                              () => _obscureToken = !_obscureToken,
-                            ),
+                            onPressed: () =>
+                                setState(() => _obscureToken = !_obscureToken),
                           ),
                         ),
                       ),
@@ -243,7 +237,7 @@ class _PushPageState extends State<PushPage> {
                 ),
 
                 if (_log.isNotEmpty) ...[
-                  const SectionHeader('执行记录'),
+                  SectionHeader(T('执行记录')),
                   Container(
                     margin: const EdgeInsets.symmetric(horizontal: AppSpace.md),
                     padding: const EdgeInsets.all(12),
@@ -278,7 +272,8 @@ class _PushPageState extends State<PushPage> {
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: (_busy || _changes.isEmpty || conflicts.isNotEmpty)
+                      onPressed:
+                          (_busy || _changes.isEmpty || conflicts.isNotEmpty)
                           ? null
                           : _push,
                       child: _busy
@@ -287,7 +282,7 @@ class _PushPageState extends State<PushPage> {
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('提交并推送'),
+                          : Text(context.tr(T('提交并推送'))),
                     ),
                   ),
                 ),
@@ -304,7 +299,12 @@ class _PushPageState extends State<PushPage> {
     required String body,
   }) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(AppSpace.md, AppSpace.sm, AppSpace.md, 0),
+      margin: const EdgeInsets.fromLTRB(
+        AppSpace.md,
+        AppSpace.sm,
+        AppSpace.md,
+        0,
+      ),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
@@ -355,10 +355,7 @@ class _PushPageState extends State<PushPage> {
     };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpace.md,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -394,7 +391,7 @@ class _PushPageState extends State<PushPage> {
           ),
           if (ch.isConflict)
             Text(
-              '冲突',
+              context.tr(T('冲突')),
               style: TextStyle(fontSize: 11, color: c.danger),
             ),
         ],
@@ -412,7 +409,7 @@ class _PushPageState extends State<PushPage> {
     if (token.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写 GitHub 访问令牌')),
+        SnackBar(content: Text(context.tr(T('请先填写 GitHub 访问令牌')))),
       );
       return;
     }
@@ -452,7 +449,7 @@ class _PushPageState extends State<PushPage> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(outcome.message ?? '推送失败'),
+          content: Text(outcome.message ?? T('推送失败')),
           duration: const Duration(seconds: 4),
         ),
       );
@@ -464,19 +461,18 @@ class _PushPageState extends State<PushPage> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('推送成功'),
+        title: Text(context.tr(T('推送成功'))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '提交 ${outcome.commitSha}',
+              TP('提交 {}', [outcome.commitSha]),
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             ),
             const SizedBox(height: 8),
             Text(
-              '已推送到 GitHub。如果你的站点由 Vercel 等平台托管，'
-              '平台会监听仓库自动开始构建，无需手动触发。',
+              T('已推送到 GitHub。如果你的站点由 Vercel 等平台托管，平台会监听仓库自动开始构建，无需手动触发。'),
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
@@ -488,7 +484,7 @@ class _PushPageState extends State<PushPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('好'),
+            child: Text(context.tr(T('好'))),
           ),
         ],
       ),

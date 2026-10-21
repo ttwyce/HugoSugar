@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../app/theme/app_colors.dart';
@@ -46,8 +47,7 @@ class ChatMarkdown extends StatelessWidget {
     );
 
     final nodes = doc.parse(text);
-    final blocks = _MdRenderer(context: context, colors: c)
-        .renderBlocks(nodes);
+    final blocks = _MdRenderer(context: context, colors: c).renderBlocks(nodes);
 
     if (blocks.isEmpty) {
       return Text(text, style: TextStyle(fontSize: 14, color: c.textPrimary));
@@ -78,17 +78,17 @@ class _MdRenderer {
   static const double _baseline = 1.7;
 
   TextStyle get _base => TextStyle(
-        fontSize: _baseFontSize,
-        height: _baseline,
-        color: colors.textPrimary,
-      );
+    fontSize: _baseFontSize,
+    height: _baseline,
+    color: colors.textPrimary,
+  );
 
   TextStyle get _mono => _base.copyWith(
-        fontFamily: 'monospace',
-        fontFamilyFallback: const ['Menlo', 'Courier', 'Courier New'],
-        fontSize: 13,
-        height: 1.5,
-      );
+    fontFamily: 'monospace',
+    fontFamilyFallback: const ['Menlo', 'Courier', 'Courier New'],
+    fontSize: 13,
+    height: 1.5,
+  );
 
   // ── 块级 ────────────────────────────────────────────
 
@@ -144,10 +144,7 @@ class _MdRenderer {
           _ => 1.0,
         };
         return Padding(
-          padding: EdgeInsets.only(
-            top: level <= 2 ? 14 : 8,
-            bottom: 6,
-          ),
+          padding: EdgeInsets.only(top: level <= 2 ? 14 : 8, bottom: 6),
           child: _richText(
             node.children ?? const [],
             base: _base.copyWith(
@@ -170,7 +167,10 @@ class _MdRenderer {
           decoration: BoxDecoration(
             color: colors.surfaceHigh,
             border: Border(
-              left: BorderSide(color: colors.accent.withValues(alpha: 0.5), width: 3),
+              left: BorderSide(
+                color: colors.accent.withValues(alpha: 0.5),
+                width: 3,
+              ),
             ),
             borderRadius: const BorderRadius.only(
               topRight: Radius.circular(4),
@@ -264,7 +264,9 @@ class _MdRenderer {
   List<Widget> _liContent(md.Element li) {
     final kids = li.children ?? const <md.Node>[];
     final hasBlock = kids.any(
-      (k) => k is md.Element && const {'p', 'ul', 'ol', 'pre', 'blockquote'}.contains(k.tag),
+      (k) =>
+          k is md.Element &&
+          const {'p', 'ul', 'ol', 'pre', 'blockquote'}.contains(k.tag),
     );
 
     if (!hasBlock) return [_richText(kids)];
@@ -296,8 +298,10 @@ class _MdRenderer {
         ? cls.substring('language-'.length)
         : (cls.isEmpty ? null : cls);
 
-    final content = (codeEl?.textContent ?? pre.textContent)
-        .replaceAll(RegExp(r'\n$'), '');
+    final content = (codeEl?.textContent ?? pre.textContent).replaceAll(
+      RegExp(r'\n$'),
+      '',
+    );
 
     return Container(
       width: double.infinity,
@@ -374,43 +378,53 @@ class _MdRenderer {
       switch (n.tag) {
         case 'strong':
         case 'b':
-          out.add(TextSpan(
-            style: base.copyWith(fontWeight: FontWeight.w700),
-            children: buildSpans(kids, base),
-          ));
+          out.add(
+            TextSpan(
+              style: base.copyWith(fontWeight: FontWeight.w700),
+              children: buildSpans(kids, base),
+            ),
+          );
 
         case 'em':
         case 'i':
-          out.add(TextSpan(
-            style: base.copyWith(fontStyle: FontStyle.italic),
-            children: buildSpans(kids, base),
-          ));
+          out.add(
+            TextSpan(
+              style: base.copyWith(fontStyle: FontStyle.italic),
+              children: buildSpans(kids, base),
+            ),
+          );
 
         case 'del':
         case 's':
-          out.add(TextSpan(
-            style: base.copyWith(decoration: TextDecoration.lineThrough),
-            children: buildSpans(kids, base),
-          ));
+          out.add(
+            TextSpan(
+              style: base.copyWith(decoration: TextDecoration.lineThrough),
+              children: buildSpans(kids, base),
+            ),
+          );
 
         case 'code':
-          out.add(TextSpan(
-            text: n.textContent,
-            style: _mono.copyWith(
-              backgroundColor: colors.surfaceHigh,
-              color: colors.accent,
+          out.add(
+            TextSpan(
+              text: n.textContent,
+              style: _mono.copyWith(
+                backgroundColor: colors.surfaceHigh,
+                color: colors.accent,
+              ),
             ),
-          ));
+          );
 
         case 'a':
-          out.add(TextSpan(
-            style: base.copyWith(
-              color: colors.accent,
-              decoration: TextDecoration.underline,
-              decorationColor: colors.accent.withValues(alpha: 0.5),
+          out.add(
+            TextSpan(
+              style: base.copyWith(
+                color: colors.accent,
+                decoration: TextDecoration.underline,
+                decorationColor: colors.accent.withValues(alpha: 0.5),
+              ),
+              children: buildSpans(kids, base),
             ),
-            children: buildSpans(kids, base),
-          ));
+          );
 
         case 'br':
           out.add(const TextSpan(text: '\n'));
@@ -419,10 +433,12 @@ class _MdRenderer {
           // 不加载网络图片：AI 回复里的图多为外链，
           // 加载既慢又可能失联。保留 alt 文本。
           final alt = n.attributes['alt'] ?? '';
-          out.add(TextSpan(
-            text: alt.isEmpty ? '[图片]' : '[图片: $alt]',
-            style: base.copyWith(color: colors.textTertiary),
-          ));
+          out.add(
+            TextSpan(
+              text: alt.isEmpty ? T('[图片]') : TP('[图片: {}]', [alt]),
+              style: base.copyWith(color: colors.textTertiary),
+            ),
+          );
 
         default:
           out.add(TextSpan(children: buildSpans(kids, base)));

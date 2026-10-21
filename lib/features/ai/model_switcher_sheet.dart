@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/ai_client.dart';
@@ -16,10 +17,7 @@ import '../../core/ai/ai_controller.dart';
 /// 换端点后模型列表会切到新端点；如果新端点还没有模型，
 /// 就允许直接手填 —— 很多中转站不实现 `/models`，不能因为拉不到
 /// 列表就把用户卡死在这里。
-Future<void> showModelSwitcher(
-  BuildContext context,
-  AiController controller,
-) {
+Future<void> showModelSwitcher(BuildContext context, AiController controller) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -96,7 +94,7 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
         _loading = false;
         if (list.isEmpty) {
           _manualMode = true;
-          _error = '这个端点没有返回模型列表，直接手填模型名';
+          _error = T('这个端点没有返回模型列表，直接手填模型名');
         }
       });
     } on AiException catch (e) {
@@ -124,9 +122,9 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
     );
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在生成中，稍后再切换')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('正在生成中，稍后再切换')))));
       return;
     }
     Navigator.of(context).pop();
@@ -139,7 +137,9 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
     final activeId = cfg.active?.id ?? '';
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SafeArea(
         // 与端点编辑面板同样的坑：modal bottom sheet 里横向无界，
         // 必须给死宽度，否则 Row/Expanded 会抛 infinite width。
@@ -165,7 +165,7 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                       Icon(Icons.bolt, size: 16, color: c.accent),
                       const SizedBox(width: 6),
                       Text(
-                        '切换端点与模型',
+                        context.tr(T('切换端点与模型')),
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -178,9 +178,14 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
 
                 // ── 端点段 ──
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpace.md, 6, AppSpace.md, 2),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.md,
+                    6,
+                    AppSpace.md,
+                    2,
+                  ),
                   child: Text(
-                    '端点',
+                    context.tr(T('端点')),
                     style: TextStyle(fontSize: 11, color: c.textTertiary),
                   ),
                 ),
@@ -188,12 +193,14 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                   constraints: const BoxConstraints(maxHeight: 160),
                   child: ListView(
                     shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.md,
+                    ),
                     children: [
                       for (final ep in cfg.endpoints)
                         _PickRow(
                           label: ep.name,
-                          sub: ep.model.isEmpty ? '未选模型' : ep.model,
+                          sub: ep.model.isEmpty ? T('未选模型') : ep.model,
                           selected: ep.id == _pickedEndpointId,
                           isActive: ep.id == activeId,
                           onTap: () {
@@ -215,11 +222,16 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
 
                 // ── 模型段 ──
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpace.md, 0, AppSpace.md, 2),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.md,
+                    0,
+                    AppSpace.md,
+                    2,
+                  ),
                   child: Row(
                     children: [
                       Text(
-                        '模型',
+                        context.tr(T('模型')),
                         style: TextStyle(fontSize: 11, color: c.textTertiary),
                       ),
                       const Spacer(),
@@ -245,8 +257,11 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                                 Icon(Icons.refresh, size: 12, color: c.accent),
                                 const SizedBox(width: 3),
                                 Text(
-                                  '刷新',
-                                  style: TextStyle(fontSize: 11, color: c.accent),
+                                  context.tr(T('刷新')),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: c.accent,
+                                  ),
                                 ),
                               ],
                             ),
@@ -260,7 +275,7 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                             vertical: 2,
                           ),
                           child: Text(
-                            _manualMode ? '从列表选' : '手动输入',
+                            _manualMode ? T('从列表选') : T('手动输入'),
                             style: TextStyle(fontSize: 11, color: c.accent),
                           ),
                         ),
@@ -284,9 +299,9 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                             controller: _manual,
                             autocorrect: false,
                             style: const TextStyle(fontSize: 13),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               isDense: true,
-                              hintText: '例如 gpt-4o-mini',
+                              hintText: context.tr(T('例如 gpt-4o-mini')),
                               hintStyle: TextStyle(fontSize: 12),
                             ),
                           ),
@@ -298,7 +313,7 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                             if (m.isEmpty) return;
                             _apply(model: m);
                           },
-                          child: const Text('确定'),
+                          child: Text(context.tr(T('确定'))),
                         ),
                       ],
                     ),
@@ -315,8 +330,11 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                               12,
                             ),
                             child: Text(
-                              _loading ? '正在获取模型列表…' : '（还没有可选的模型）',
-                              style: TextStyle(fontSize: 12, color: c.textTertiary),
+                              _loading ? T('正在获取模型列表…') : T('（还没有可选的模型）'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: c.textTertiary,
+                              ),
                             ),
                           )
                         : ListView.builder(
@@ -349,7 +367,11 @@ class _ModelSwitcherSheetState extends State<_ModelSwitcherSheet> {
                     ),
                     child: Text(
                       _error!,
-                      style: TextStyle(fontSize: 11, height: 1.5, color: c.danger),
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.5,
+                        color: c.danger,
+                      ),
                     ),
                   ),
 
@@ -393,7 +415,9 @@ class _PickRow extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
               size: 15,
               color: selected ? c.accent : c.textTertiary,
             ),
@@ -432,7 +456,7 @@ class _PickRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(
-                  '当前',
+                  context.tr(T('当前')),
                   style: TextStyle(fontSize: 9, color: c.accent),
                 ),
               ),

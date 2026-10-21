@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 /// Markdown 语法插入。
 ///
@@ -99,11 +100,17 @@ class MarkdownInsert {
       // 把原选区端点映射到新位置
       final lineOrigStart = lineStart + _offsetInBlock(lines, i);
       final lineOrigEnd = lineOrigStart + line.length;
-      if (newCaret == null && sel.start >= lineOrigStart && sel.start <= lineOrigEnd) {
-        newCaret = lineOutStart + _mapOffset(line, out, sel.start - lineOrigStart);
+      if (newCaret == null &&
+          sel.start >= lineOrigStart &&
+          sel.start <= lineOrigEnd) {
+        newCaret =
+            lineOutStart + _mapOffset(line, out, sel.start - lineOrigStart);
       }
-      if (newExtent == null && sel.end >= lineOrigStart && sel.end <= lineOrigEnd) {
-        newExtent = lineOutStart + _mapOffset(line, out, sel.end - lineOrigStart);
+      if (newExtent == null &&
+          sel.end >= lineOrigStart &&
+          sel.end <= lineOrigEnd) {
+        newExtent =
+            lineOutStart + _mapOffset(line, out, sel.end - lineOrigStart);
       }
     }
 
@@ -161,8 +168,7 @@ class MarkdownInsert {
     final sel = _safeSelection(value);
     final text = value.text;
     final newText = text.replaceRange(sel.start, sel.end, snippet);
-    final caret = sel.start +
-        (caretOffsetFromStart ?? snippet.length);
+    final caret = sel.start + (caretOffsetFromStart ?? snippet.length);
     return TextEditingValue(
       text: newText,
       selection: TextSelection.collapsed(offset: caret),
@@ -173,7 +179,7 @@ class MarkdownInsert {
   static TextEditingValue link(TextEditingValue value) {
     final sel = _safeSelection(value);
     final selected = value.text.substring(sel.start, sel.end);
-    final label = selected.isEmpty ? '链接文字' : selected;
+    final label = selected.isEmpty ? T('链接文字') : selected;
     final snippet = '[$label](url)';
     final newText = value.text.replaceRange(sel.start, sel.end, snippet);
     // 光标选中 `url`，用户直接打字就能填地址
@@ -189,7 +195,8 @@ class MarkdownInsert {
 
   /// 插入表格骨架
   static TextEditingValue table(TextEditingValue value) {
-    const snippet = '\n'
+    const snippet =
+        '\n'
         '| 列 1 | 列 2 |\n'
         '| --- | --- |\n'
         '| 内容 | 内容 |\n';

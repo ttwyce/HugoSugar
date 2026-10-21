@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/ai/agent_runner.dart';
@@ -44,7 +45,7 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    req.isNew ? '新建文章' : '修改文章',
+                    req.isNew ? T('新建文章') : T('修改文章'),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -55,7 +56,7 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
                 TextButton(
                   onPressed: () => setState(() => _showFullNew = !_showFullNew),
                   child: Text(
-                    _showFullNew ? '看差异' : '看全文',
+                    _showFullNew ? T('看差异') : T('看全文'),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -73,8 +74,8 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
             const SizedBox(height: 2),
             Text(
               _showFullNew
-                  ? '将写入 ${req.newContent.length} 字符'
-                  : '${diff.added} 行新增 · ${diff.removed} 行删除',
+                  ? TP('将写入 {} 字符', [req.newContent.length])
+                  : TP('{} 行新增 · {} 行删除', [diff.added, diff.removed]),
               style: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.sm),
@@ -111,7 +112,7 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: c.textSecondary,
                     ),
-                    child: const Text('中止'),
+                    child: Text(context.tr(T('中止'))),
                   ),
                 ),
                 const SizedBox(width: AppSpace.sm),
@@ -119,7 +120,7 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
                   child: OutlinedButton(
                     onPressed: () =>
                         Navigator.of(context).pop(ApprovalDecision.reject),
-                    child: const Text('不要'),
+                    child: Text(context.tr(T('不要'))),
                   ),
                 ),
                 const SizedBox(width: AppSpace.sm),
@@ -128,7 +129,7 @@ class _WriteApprovalSheetState extends State<WriteApprovalSheet> {
                   child: FilledButton(
                     onPressed: () =>
                         Navigator.of(context).pop(ApprovalDecision.approve),
-                    child: const Text('写入'),
+                    child: Text(context.tr(T('写入'))),
                   ),
                 ),
               ],
@@ -156,8 +157,8 @@ class _DiffView extends StatelessWidget {
         final bg = isAdd
             ? c.accent.withValues(alpha: 0.12)
             : isRemove
-                ? c.danger.withValues(alpha: 0.12)
-                : Colors.transparent;
+            ? c.danger.withValues(alpha: 0.12)
+            : Colors.transparent;
         final prefix = isAdd ? '+' : (isRemove ? '-' : ' ');
 
         return Container(
@@ -188,7 +189,11 @@ class DiffLine {
 }
 
 class DiffResult {
-  const DiffResult({required this.lines, required this.added, required this.removed});
+  const DiffResult({
+    required this.lines,
+    required this.added,
+    required this.removed,
+  });
   final List<DiffLine> lines;
   final int added;
   final int removed;
@@ -208,7 +213,7 @@ DiffResult computeDiff(String oldText, String newText) {
 
   if (a.length > 3000 || b.length > 3000) {
     final lines = <DiffLine>[
-      const DiffLine(DiffKind.removed, '（文件过大，不逐行比对）'),
+      DiffLine(DiffKind.removed, T('（文件过大，不逐行比对）')),
       ...b.map((t) => DiffLine(DiffKind.added, t)),
     ];
     return DiffResult(lines: lines, added: b.length, removed: a.length);

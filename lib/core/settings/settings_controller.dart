@@ -74,6 +74,25 @@ class SettingsController extends ChangeNotifier
     await _store?.save(_value);
   }
 
+  int get bodySizeIndex => _value.bodySizeIndex;
+  String get bodyFontFamily => _value.bodyFontFamily;
+
+  Future<void> setBodySizeIndex(int index) async {
+    final v = index.clamp(0, 4);
+    if (_value.bodySizeIndex == v) return;
+    _value = _value.copyWith(bodySizeIndex: v);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 设置正文字体族名。空串 = 跟随系统。
+  Future<void> setBodyFontFamily(String family) async {
+    if (_value.bodyFontFamily == family) return;
+    _value = _value.copyWith(bodyFontFamily: family);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
     if (store != null) _store = store;

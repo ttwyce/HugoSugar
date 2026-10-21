@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # Windows/macOS 等桌面端用 major.minor.patch+build 形式。
 # 目前处于 M1 阶段，用 0.x 表示尚未到可用版本。
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.9.0

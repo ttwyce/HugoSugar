@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'accent_presets.dart';
 import 'app_colors.dart';
+import 'reading_prefs.dart';
 
 /// 排版规范。编辑器正文单独暴露，因为它是「阅读偏好」可调的。
 abstract final class AppTypography {
@@ -81,19 +82,21 @@ abstract final class AppTypography {
 
 /// 主题构建。亮暗两套都基于同一套 token，只换颜色。
 abstract final class AppTheme {
-  static ThemeData light({int accentIndex = 0}) {
+  static ThemeData light({int accentIndex = 0, ReadingPrefs reading = const ReadingPrefs(fontSize: 17, fontFamily: '')}) {
     final p = accentPresetAt(accentIndex);
     return _build(
       _withAccent(AppColors.light, p.light, p.lightSoft),
       Brightness.light,
+      reading,
     );
   }
 
-  static ThemeData dark({int accentIndex = 0}) {
+  static ThemeData dark({int accentIndex = 0, ReadingPrefs reading = const ReadingPrefs(fontSize: 17, fontFamily: '')}) {
     final p = accentPresetAt(accentIndex);
     return _build(
       _withAccent(AppColors.dark, p.dark, p.darkSoft),
       Brightness.dark,
+      reading,
     );
   }
 
@@ -121,7 +124,7 @@ abstract final class AppTheme {
         warning: base.warning,
       );
 
-  static ThemeData _build(AppColors c, Brightness brightness) {
+  static ThemeData _build(AppColors c, Brightness brightness, ReadingPrefs reading) {
     final scheme = ColorScheme(
       brightness: brightness,
       primary: c.accent,
@@ -145,7 +148,7 @@ abstract final class AppTheme {
       canvasColor: c.background,
       dividerColor: c.divider,
       splashFactory: InkSparkle.splashFactory,
-      extensions: <ThemeExtension<dynamic>>[c],
+      extensions: <ThemeExtension<dynamic>>[c, reading],
       textTheme: AppTypography.textTheme(c.textPrimary),
 
       // AppBar：无阴影、无痕，只留标题

@@ -4,12 +4,14 @@ import '../../app/i18n/l10n_scope.dart';
 import '../../app/i18n/strings.dart';
 import '../../app/theme/accent_presets.dart';
 import '../../app/theme/app_colors.dart';
+import '../../app/theme/reading_prefs.dart';
 import '../../core/ai/ai_controller.dart';
 import '../../core/ai/default_prompt.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
+import '../ai/ai_endpoints_page.dart';
 import 'author_identity_dialog.dart';
 import 'author_suggestion.dart';
 import 'memory_page.dart';
@@ -45,7 +47,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  String _tokenHint = '未设置';
+  String _tokenHint = T('未设置');
 
   @override
   void initState() {
@@ -56,7 +58,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _refreshToken() async {
     final m = await loadTokenMask();
     if (!mounted) return;
-    setState(() => _tokenHint = m.hasToken ? '已设置 ${m.masked}' : '未设置');
+    setState(
+      () => _tokenHint = m.hasToken ? TP('已设置 {}', [m.masked]) : T('未设置'),
+    );
   }
 
   Future<void> _editToken(BuildContext context) async {
@@ -73,9 +77,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final sc = widget.settingsController;
     final name = sc.authorName;
     final email = sc.authorEmail;
-    if (name.isEmpty && email.isEmpty) return '自动（跟随 GitHub 账号）';
-    if (email.isEmpty) return '$name · 邮箱自动推断';
-    return '${name.isEmpty ? "名称自动" : name} · $email';
+    if (name.isEmpty && email.isEmpty) return T('自动（跟随 GitHub 账号）');
+    if (email.isEmpty) return TP('{} · 邮箱自动推断', [name]);
+    return TP('{} · {}', [name.isEmpty ? T('名称自动') : name, email]);
   }
 
   /// 编辑 System Prompt。
@@ -102,8 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '决定 AI 的角色、文章规范与行为边界。'
-                '「恢复默认」会丢弃你的修改。',
+                T('决定 AI 的角色、文章规范与行为边界。「恢复默认」会丢弃你的修改。'),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
@@ -130,15 +133,15 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('reset'),
-            child: const Text('恢复默认'),
+            child: Text(context.tr(T('恢复默认'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text),
-            child: const Text('保存'),
+            child: Text(context.tr(T('保存'))),
           ),
         ],
       ),
@@ -154,8 +157,8 @@ class _SettingsPageState extends State<SettingsPage> {
   String _memorySubtitle() {
     final store = widget.aiController.memoryStore;
     final n = store?.all.length ?? 0;
-    if (n == 0) return '还没有记忆，AI 会在对话中自动学习';
-    return '已记住 $n 条（可查看、修改、删除）';
+    if (n == 0) return T('还没有记忆，AI 会在对话中自动学习');
+    return TP('已记住 {} 条（可查看、修改、删除）', [n]);
   }
 
   Future<void> _openMemory() async {
@@ -169,8 +172,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   String _toolsSubtitle() {
     final off = widget.settingsController.aiDisabledTools;
-    if (off.isEmpty) return '全部工具可用';
-    return '已关掉 ${off.length} 个（模型看不到它们）';
+    if (off.isEmpty) return T('全部工具可用');
+    return TP('已关掉 {} 个（模型看不到它们）', [off.length]);
   }
 
   Future<void> _openToolToggles() async {
@@ -189,9 +192,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final store = widget.aiController.skillStore;
     final total = store?.all.length ?? 0;
     final active = widget.aiController.skillIds.length;
-    if (total == 0) return '尚未加载';
-    if (active == 0) return '$total 个可用，当前未启用';
-    return '当前启用 $active 个 / 共 $total 个';
+    if (total == 0) return T('尚未加载');
+    if (active == 0) return TP('{} 个可用，当前未启用', [total]);
+    return TP('当前启用 {} 个 / 共 {} 个', [active, total]);
   }
 
   String _localeLabel() {
@@ -242,13 +245,13 @@ class _SettingsPageState extends State<SettingsPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '强调色',
+              Text(
+                context.tr(T('强调色')),
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
               Text(
-                '只改强调色，错误红和警告黄保持不变——它们的颜色本身就是语义。',
+                context.tr(T('只改强调色，错误红和警告黄保持不变——它们的颜色本身就是语义。')),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(bctx).colorScheme.onSurfaceVariant,
@@ -318,6 +321,103 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() {});
   }
 
+  /// 选正文字体。
+  ///
+  /// 只列「系统黑体」和几个常见可选族名：我们在打包时没有内置字体文件，
+  /// 填一个手机上没有的族名，Flutter 会静默回落到系统默认 —— 用户会
+  /// 以为「选了没变化」。所以这里给的是名实相符的选项，而不是一个
+  /// 允许随便输入、却可能毫无效果的输入框。
+  Future<void> _pickBodyFont() async {
+    const options = <({String family, String label})>[
+      (family: '', label: '系统默认'),
+      (family: 'serif', label: '衬线（宋体类）'),
+      (family: 'monospace', label: '等宽'),
+      (family: 'sans-serif', label: '无衬线（黑体类）'),
+    ];
+    final current = widget.settingsController.bodyFontFamily;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            for (final o in options)
+              ListTile(
+                title: Text(bctx.tr(o.label)),
+                trailing: o.family == current
+                    ? Icon(Icons.check, color: bctx.appColors.accent)
+                    : null,
+                onTap: () => Navigator.pop(bctx, o.family),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await widget.settingsController.setBodyFontFamily(picked);
+    if (mounted) setState(() {});
+  }
+
+  /// 选正文字号档位。
+  Future<void> _pickBodySize() async {
+    final current = widget.settingsController.bodySizeIndex;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            for (var i = 0; i < 5; i++)
+              ListTile(
+                title: Text('${ReadingPrefs.labelForIndex(i)} px'),
+                trailing: i == current
+                    ? Icon(Icons.check, color: bctx.appColors.accent)
+                    : null,
+                onTap: () => Navigator.pop(bctx, i),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await widget.settingsController.setBodySizeIndex(picked);
+    if (mounted) setState(() {});
+  }
+
+  /// 正文字体当前可读名称。
+  String _bodyFontLabel() {
+    final f = widget.settingsController.bodyFontFamily;
+    return switch (f) {
+      '' => T('系统默认'),
+      'serif' => T('衬线（宋体类）'),
+      'monospace' => T('等宽'),
+      'sans-serif' => T('无衬线（黑体类）'),
+      _ => f,
+    };
+  }
+
+  /// API 配置副标题：显示当前激活端点的模型，未配置时明确说「未配置」。
+  String _apiSubtitle() {
+    final ep = widget.aiController.activeEndpoint;
+    if (ep == null) return T('未配置，点击添加端点');
+    final model = ep.model.trim();
+    return model.isEmpty ? ep.name : '${ep.name} · $model';
+  }
+
+  /// 打开端点配置页。
+  Future<void> _openEndpoints() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AiEndpointsPage(controller: widget.aiController),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   /// 延迟释放一个 TextEditingController。
   ///
   /// 为什么不能在 showDialog 返回后立即 dispose：
@@ -356,13 +456,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('单轮 token 上限'),
+        title: Text(context.tr(T('单轮 token 上限'))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '一次回答里累计超过这个数就中止，防止长对话烧掉大量额度。',
+              context.tr(T('一次回答里累计超过这个数就中止，防止长对话烧掉大量额度。')),
               style: TextStyle(
                 fontSize: 12,
                 height: 1.5,
@@ -384,11 +484,11 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('保存'),
+            child: Text(context.tr(T('保存'))),
           ),
         ],
       ),
@@ -447,14 +547,14 @@ class _SettingsPageState extends State<SettingsPage> {
     final cfg = sc.config;
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('设置'))),
+      appBar: AppBar(title: Text(context.tr(T('设置')))),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
-          SectionHeader(context.tr('写作')),
+          SectionHeader(context.tr(T('写作'))),
           ListTile(
             leading: const Icon(Icons.event_outlined),
-            title: const Text('日期格式'),
+            title: Text(context.tr(T('日期格式'))),
             subtitle: Text(
               '${widget.settingsController.dateFormat.label} · '
               '${widget.settingsController.dateFormat.sample}',
@@ -466,7 +566,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.insert_drive_file_outlined),
-            title: const Text('新建文件名'),
+            title: Text(context.tr(T('新建文件名'))),
             subtitle: Text(
               '${widget.settingsController.fileNameStyle.label}'
               '${_fileNameHint(widget.settingsController.fileNameStyle)}',
@@ -476,14 +576,14 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () => _pickFileNameStyle(context),
           ),
 
-          SectionHeader(context.tr('外观')),
+          SectionHeader(context.tr(T('外观'))),
           _SegmentedThemeMode(
             value: widget.themeMode,
             onChanged: widget.onThemeModeChanged,
           ),
           const IndentedDivider(),
           ListTile(
-            title: const Text('强调色'),
+            title: Text(context.tr(T('强调色'))),
             subtitle: Text(
               accentPresetAt(widget.settingsController.accentPreset).name,
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -494,7 +594,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.translate),
-            title: Text(context.tr('界面语言')),
+            title: Text(context.tr(T('界面语言'))),
             subtitle: Text(
               _localeLabel(),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -504,25 +604,31 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const IndentedDivider(),
           ListTile(
-            title: Text(context.tr('正文字体')),
-            subtitle: const Text('系统黑体'),
+            title: Text(context.tr(T('正文字体'))),
+            subtitle: Text(
+              _bodyFontLabel(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
             trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () {},
+            onTap: _pickBodyFont,
           ),
           const IndentedDivider(),
           ListTile(
-            title: const Text('正文字号'),
-            subtitle: const Text('17'),
+            title: Text(context.tr(T('正文字号'))),
+            subtitle: Text(
+              '${ReadingPrefs.labelForIndex(widget.settingsController.bodySizeIndex)} px',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
             trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () {},
+            onTap: _pickBodySize,
           ),
 
-          SectionHeader(context.tr('站点')),
+          SectionHeader(context.tr(T('站点'))),
           ListTile(
             leading: const Icon(Icons.folder_outlined),
-            title: const Text('当前站点'),
+            title: Text(context.tr(T('当前站点'))),
             subtitle: Text(
-              cfg == null ? '未接入' : '${cfg.displayName} · ${cfg.repoSlug}',
+              cfg == null ? T('未接入') : '${cfg.displayName} · ${cfg.repoSlug}',
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: () {},
@@ -530,7 +636,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.key_outlined),
-            title: const Text('GitHub 访问令牌'),
+            title: Text(context.tr(T('GitHub 访问令牌'))),
             subtitle: Text(
               _tokenHint,
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -541,7 +647,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.badge_outlined),
-            title: const Text('提交作者'),
+            title: Text(context.tr(T('提交作者'))),
             subtitle: Text(
               _authorHint(),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -560,39 +666,41 @@ class _SettingsPageState extends State<SettingsPage> {
               if (mounted) setState(() {});
             },
             secondary: const Icon(Icons.lightbulb_outline),
-            title: const Text('允许 AI 读取想法'),
+            title: Text(context.tr(T('允许 AI 读取想法'))),
             subtitle: Text(
               widget.settingsController.aiReadNotes
-                  ? '开启后 AI 可以读到你的想法'
-                  : '关闭时 AI 看不到任何想法（在对话里指定分组或想法除外）',
+                  ? T('开启后 AI 可以读到你的想法')
+                  : T('关闭时 AI 看不到任何想法（在对话里指定分组或想法除外）'),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
           ),
           if (widget.settingsController.aiReadNotes)
             ListTile(
               leading: const Icon(Icons.folder_outlined),
-              title: const Text('允许读取的分组'),
+              title: Text(context.tr(T('允许读取的分组'))),
               subtitle: Text(
                 widget.settingsController.aiNoteCategoryIds.isEmpty
-                    ? '全部（可在「想法」页的 AI 菜单里指定分组）'
-                    : '已选 ${widget.settingsController.aiNoteCategoryIds.length} 个',
+                    ? T('全部（可在「想法」页的 AI 菜单里指定分组）')
+                    : TP('已选 {} 个', [
+                        widget.settingsController.aiNoteCategoryIds.length,
+                      ]),
                 style: TextStyle(fontSize: 12, color: c.textTertiary),
               ),
               // 分组选择需要 NoteStore，而设置页拿不到它。
               // 与其为了一个开关把 NoteController 一路传进设置页，
               // 不如把入口放在「想法」页 —— 那里本来就有分类数据和上下文。
               trailing: Text(
-                '在想法页设置',
+                context.tr(T('在想法页设置')),
                 style: TextStyle(fontSize: 12, color: c.textTertiary),
               ),
             ),
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.api),
-            title: const Text('API 配置'),
-            subtitle: const Text('未配置'),
+            title: Text(context.tr(T('API 配置'))),
+            subtitle: Text(_apiSubtitle()),
             trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () {},
+            onTap: _openEndpoints,
           ),
           const IndentedDivider(),
           ListTile(
@@ -600,8 +708,10 @@ class _SettingsPageState extends State<SettingsPage> {
             title: const Text('System Prompt'),
             subtitle: Text(
               widget.settingsController.aiSystemPrompt.trim().isEmpty
-                  ? '使用默认模板'
-                  : '已自定义（${widget.settingsController.aiSystemPrompt.length} 字）',
+                  ? T('使用默认模板')
+                  : TP('已自定义（{} 字）', [
+                      widget.settingsController.aiSystemPrompt.length,
+                    ]),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -610,7 +720,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.psychology_outlined),
-            title: const Text('记忆库'),
+            title: Text(context.tr(T('记忆库'))),
             subtitle: Text(
               _memorySubtitle(),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -621,10 +731,12 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.compress),
-            title: const Text('上下文压缩'),
+            title: Text(context.tr(T('上下文压缩'))),
             subtitle: Text(
-              '超过 ${widget.settingsController.aiCompressThreshold} 条开始折叠，'
-              '保留最近 ${widget.settingsController.aiKeepRecent} 条',
+              TP('超过 {} 条开始折叠，保留最近 {} 条', [
+                widget.settingsController.aiCompressThreshold,
+                widget.settingsController.aiKeepRecent,
+              ]),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -633,10 +745,11 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.speed),
-            title: const Text('单轮 token 上限'),
+            title: Text(context.tr(T('单轮 token 上限'))),
             subtitle: Text(
-              '${widget.settingsController.aiMaxTokensPerRound}'
-              '（超过即中止本轮）',
+              TP('{}（超过即中止本轮）', [
+                widget.settingsController.aiMaxTokensPerRound,
+              ]),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -646,7 +759,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.handyman_outlined),
-            title: const Text('工具开关'),
+            title: Text(context.tr(T('工具开关'))),
             subtitle: Text(
               _toolsSubtitle(),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -657,7 +770,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const IndentedDivider(),
           ListTile(
             leading: const Icon(Icons.auto_fix_high),
-            title: const Text('Skill / 工作模式'),
+            title: Text(context.tr(T('Skill / 工作模式'))),
             subtitle: Text(
               _skillsSubtitle(),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -666,12 +779,12 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: _openSkills,
           ),
 
-          SectionHeader(context.tr('关于')),
+          SectionHeader(context.tr(T('关于'))),
           ListTile(
-            title: const Text('版本'),
-            subtitle: const Text('0.1.0 (M1)'),
+            title: Text(context.tr(T('版本'))),
+            subtitle: const Text('1.0.0'),
             trailing: Text(
-              '检查更新',
+              context.tr(T('检查更新')),
               style: TextStyle(fontSize: 13, color: c.accent),
             ),
             onTap: () {},
@@ -685,18 +798,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _fileNameHint(FileNameStyle s) => switch (s) {
-    FileNameStyle.fromTitle => '（如 hello-world.md）',
-    FileNameStyle.timestamp => '（如 post-20240501-080309.md）',
-    FileNameStyle.dateAndTitle => '（如 20240501-hello-world.md）',
+    FileNameStyle.fromTitle => T('（如 hello-world.md）'),
+    FileNameStyle.timestamp => T('（如 post-20240501-080309.md）'),
+    FileNameStyle.dateAndTitle => T('（如 20240501-hello-world.md）'),
   };
 
   void _pickDateFormat(BuildContext context) {
     _showChoiceSheet<DateFormatStyle>(
       context: context,
-      title: '日期格式',
-      note:
-          '写入 Front Matter 的 date 字段。Hugo 三种都能解析，'
-          '但如果主题或时间线功能要求严格 ISO8601，选带时区那种。',
+      title: T('日期格式'),
+      note: T(
+        '写入 Front Matter 的 date 字段。Hugo 三种都能解析，但如果主题或时间线功能要求严格 ISO8601，选带时区那种。',
+      ),
       values: DateFormatStyle.values,
       current: widget.settingsController.dateFormat,
       labelOf: (v) => v.label,
@@ -708,10 +821,8 @@ class _SettingsPageState extends State<SettingsPage> {
   void _pickFileNameStyle(BuildContext context) {
     _showChoiceSheet<FileNameStyle>(
       context: context,
-      title: '新建文件名',
-      note:
-          '只影响以后新建的文章，已存在的文件不会改名。'
-          '同名时自动加 -2、-3 后缀，绝不覆盖。',
+      title: T('新建文件名'),
+      note: T('只影响以后新建的文章，已存在的文件不会改名。同名时自动加 -2、-3 后缀，绝不覆盖。'),
       values: FileNameStyle.values,
       current: widget.settingsController.fileNameStyle,
       labelOf: (v) => v.label,
@@ -821,9 +932,9 @@ class _SegmentedThemeMode extends StatelessWidget {
         ),
         child: Row(
           children: [
-            _item(context, ThemeMode.system, '跟随系统'),
-            _item(context, ThemeMode.light, '亮色'),
-            _item(context, ThemeMode.dark, '暗色'),
+            _item(context, ThemeMode.system, T('跟随系统')),
+            _item(context, ThemeMode.light, T('亮色')),
+            _item(context, ThemeMode.dark, T('暗色')),
           ],
         ),
       ),
@@ -913,13 +1024,13 @@ class _CompressDialogState extends State<_CompressDialog> {
   Widget build(BuildContext context) {
     final c = context.appColors;
     return AlertDialog(
-      title: const Text('上下文压缩'),
+      title: Text(context.tr(T('上下文压缩'))),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              const Expanded(child: Text('触发阈值（条）')),
+              Expanded(child: Text(context.tr(T('触发阈值（条）')))),
               SizedBox(
                 width: 64,
                 child: TextField(
@@ -937,7 +1048,7 @@ class _CompressDialogState extends State<_CompressDialog> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Expanded(child: Text('保留最近（条）')),
+              Expanded(child: Text(context.tr(T('保留最近（条）')))),
               SizedBox(
                 width: 64,
                 child: TextField(
@@ -954,9 +1065,7 @@ class _CompressDialogState extends State<_CompressDialog> {
           ),
           const SizedBox(height: 12),
           Text(
-            '超过阈值后，较早的消息会被折叠成摘要，'
-            '最近几条原样保留。\n'
-            '下限 4 / 上限 200。保留数必须小于阈值。',
+            T('超过阈值后，较早的消息会被折叠成摘要，最近几条原样保留。\n下限 4 / 上限 200。保留数必须小于阈值。'),
             style: TextStyle(fontSize: 11, color: c.textTertiary),
           ),
         ],
@@ -964,12 +1073,12 @@ class _CompressDialogState extends State<_CompressDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.tr(T('取消'))),
         ),
         TextButton(
           onPressed: () =>
               Navigator.pop(context, (threshold: _threshold, keep: _keep)),
-          child: const Text('保存'),
+          child: Text(context.tr(T('保存'))),
         ),
       ],
     );

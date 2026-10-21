@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_theme.dart';
+import '../../app/theme/reading_prefs.dart';
 import '../../core/note/note.dart';
 import '../../core/note/note_controller.dart';
 import '../editor/markdown_highlighter.dart';
@@ -33,8 +35,7 @@ class NoteEditorPage extends StatefulWidget {
 
 class _NoteEditorPageState extends State<NoteEditorPage> {
   final _titleCtrl = TextEditingController();
-  late final MarkdownEditingController _bodyCtrl =
-      MarkdownEditingController();
+  late final MarkdownEditingController _bodyCtrl = MarkdownEditingController();
   final _bodyFocus = FocusNode();
 
   Timer? _saveTimer;
@@ -110,7 +111,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       _dirty = false;
       if (saved != null) {
         _note = saved;
-        _savedAtLabel = '已保存';
+        _savedAtLabel = T('已保存');
       }
     });
   }
@@ -140,11 +141,15 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           title: const SizedBox.shrink(),
           actions: [
             IconButton(
-              onPressed: _note == null ? null : () => c.togglePin(_note!.id).then(
-                    (_) => setState(() {
-                      _note = c.store.byId(widget.noteId);
-                    }),
-                  ),
+              onPressed: _note == null
+                  ? null
+                  : () => c
+                        .togglePin(_note!.id)
+                        .then(
+                          (_) => setState(() {
+                            _note = c.store.byId(widget.noteId);
+                          }),
+                        ),
               icon: Icon(
                 (_note?.pinned ?? false)
                     ? Icons.push_pin
@@ -152,12 +157,12 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 size: 20,
                 color: (_note?.pinned ?? false) ? colours.accent : null,
               ),
-              tooltip: (_note?.pinned ?? false) ? '取消置顶' : '置顶',
+              tooltip: (_note?.pinned ?? false) ? T('取消置顶') : T('置顶'),
             ),
             IconButton(
               onPressed: _note == null ? null : _convert,
               icon: const Icon(Icons.article_outlined, size: 20),
-              tooltip: '转为文章',
+              tooltip: context.tr(T('转为文章')),
             ),
             const SizedBox(width: AppSpace.xs),
           ],
@@ -177,7 +182,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                     isDense: true,
                     filled: false,
                     contentPadding: EdgeInsets.zero,
-                    hintText: '笔记标题',
+                    hintText: context.tr(T('笔记标题')),
                     hintStyle: AppTypography.editorTitle.copyWith(
                       color: colours.textTertiary,
                     ),
@@ -193,10 +198,10 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                   children: [
                     Text(
                       _saving
-                          ? '保存中…'
+                          ? T('保存中…')
                           : _dirty
-                              ? '未保存'
-                              : (_savedAtLabel ?? '已保存'),
+                          ? T('未保存')
+                          : (_savedAtLabel ?? T('已保存')),
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.4,
@@ -207,7 +212,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                     Text('·', style: TextStyle(color: colours.textTertiary)),
                     const SizedBox(width: AppSpace.xs),
                     Text(
-                      '$_charCount 字',
+                      TP('{} 字', [_charCount]),
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.4,
@@ -223,11 +228,8 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                       ),
                       const SizedBox(width: 2),
                       Text(
-                        '已转文章',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colours.accent,
-                        ),
+                        context.tr(T('已转文章')),
+                        style: TextStyle(fontSize: 12, color: colours.accent),
                       ),
                     ],
                   ],
@@ -241,15 +243,19 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                     expands: true,
                     textAlignVertical: TextAlignVertical.top,
                     keyboardType: TextInputType.multiline,
-                    style: AppTypography.editorBody.copyWith(
-                      color: colours.textPrimary,
+                    style: context.reading.apply(
+                      AppTypography.editorBody.copyWith(
+                        color: colours.textPrimary,
+                      ),
                     ),
                     decoration: InputDecoration(
                       filled: false,
                       contentPadding: EdgeInsets.zero,
-                      hintText: '随手写点什么…',
-                      hintStyle: AppTypography.editorBody.copyWith(
-                        color: colours.textTertiary,
+                      hintText: context.tr(T('随手写点什么…')),
+                      hintStyle: context.reading.apply(
+                        AppTypography.editorBody.copyWith(
+                          color: colours.textTertiary,
+                        ),
                       ),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -278,7 +284,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       context: context,
       isScrollControlled: true,
       builder: (_) => _ConvertSheet(
-        initialTitle: note.title.trim().isEmpty ? '无标题' : note.title.trim(),
+        initialTitle: note.title.trim().isEmpty ? T('无标题') : note.title.trim(),
         siteCategories: c.site?.allCategories ?? const [],
         siteTags: c.site?.allTags ?? const [],
       ),
@@ -286,9 +292,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     if (result == null || !mounted) return;
 
     if (c.site == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先接入站点，再转换为文章')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('请先接入站点，再转换为文章')))));
       return;
     }
 
@@ -309,20 +315,20 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
         final choice = await showDialog<String>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('已经转换过'),
-            content: Text('${convert.message}\n\n要打开那篇文章，还是再生成一篇？'),
+            title: Text(context.tr(T('已经转换过'))),
+            content: Text(TP('{}\n\n要打开那篇文章，还是再生成一篇？', [convert.message])),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
+                child: Text(context.tr(T('取消'))),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'force'),
-                child: const Text('再生成一篇'),
+                child: Text(context.tr(T('再生成一篇'))),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'open'),
-                child: const Text('打开'),
+                child: Text(context.tr(T('打开'))),
               ),
             ],
           ),
@@ -342,9 +348,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           );
           if (!mounted) return;
           if (!retry.ok) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(retry.message ?? '转换失败')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(retry.message ?? T('转换失败'))));
             return;
           }
           setState(() => _note = c.store.byId(widget.noteId));
@@ -374,9 +380,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(convert.message ?? '转换失败')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(convert.message ?? T('转换失败'))));
       }
       return;
     }
@@ -431,8 +437,9 @@ class _ConvertSheet extends StatefulWidget {
 }
 
 class _ConvertSheetState extends State<_ConvertSheet> {
-  late final TextEditingController _titleCtrl =
-      TextEditingController(text: widget.initialTitle);
+  late final TextEditingController _titleCtrl = TextEditingController(
+    text: widget.initialTitle,
+  );
   final _descCtrl = TextEditingController();
   final _catCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
@@ -487,7 +494,7 @@ class _ConvertSheetState extends State<_ConvertSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '转为文章',
+                context.tr(T('转为文章')),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -497,7 +504,7 @@ class _ConvertSheetState extends State<_ConvertSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '笔记正文会成为文章正文。分类和标签与笔记分类无关。',
+                  context.tr(T('笔记正文会成为文章正文。分类和标签与笔记分类无关。')),
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.5,
@@ -509,8 +516,8 @@ class _ConvertSheetState extends State<_ConvertSheet> {
               TextField(
                 controller: _titleCtrl,
                 style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  hintText: '文章标题',
+                decoration: InputDecoration(
+                  hintText: context.tr(T('文章标题')),
                   isDense: true,
                 ),
               ),
@@ -519,14 +526,14 @@ class _ConvertSheetState extends State<_ConvertSheet> {
                 controller: _descCtrl,
                 style: const TextStyle(fontSize: 14),
                 maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: '简介（可选）',
+                decoration: InputDecoration(
+                  hintText: context.tr(T('简介（可选）')),
                   isDense: true,
                 ),
               ),
               const SizedBox(height: AppSpace.sm),
               _ChipField(
-                label: '分类',
+                label: T('分类'),
                 selected: _categories,
                 controller: _catCtrl,
                 suggestions: widget.siteCategories,
@@ -538,7 +545,7 @@ class _ConvertSheetState extends State<_ConvertSheet> {
               ),
               const SizedBox(height: AppSpace.sm),
               _ChipField(
-                label: '标签',
+                label: T('标签'),
                 selected: _tags,
                 controller: _tagCtrl,
                 suggestions: widget.siteTags,
@@ -553,8 +560,11 @@ class _ConvertSheetState extends State<_ConvertSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      '保存为草稿',
-                      style: TextStyle(fontSize: 14, color: colours.textPrimary),
+                      context.tr(T('保存为草稿')),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colours.textPrimary,
+                      ),
                     ),
                   ),
                   Switch(
@@ -571,7 +581,7 @@ class _ConvertSheetState extends State<_ConvertSheet> {
                     final title = _titleCtrl.text.trim();
                     if (title.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('请填写标题')),
+                        SnackBar(content: Text(context.tr(T('请填写标题')))),
                       );
                       return;
                     }
@@ -585,7 +595,7 @@ class _ConvertSheetState extends State<_ConvertSheet> {
                       ),
                     );
                   },
-                  child: const Text('生成文章'),
+                  child: Text(context.tr(T('生成文章'))),
                 ),
               ),
             ],
@@ -619,8 +629,10 @@ class _ChipField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colours = context.appColors;
-    final available =
-        suggestions.where((s) => !selected.contains(s)).take(8).toList();
+    final available = suggestions
+        .where((s) => !selected.contains(s))
+        .take(8)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -639,7 +651,7 @@ class _ChipField extends StatelessWidget {
           style: const TextStyle(fontSize: 14),
           onSubmitted: (_) => onAdd(),
           decoration: InputDecoration(
-            hintText: '回车添加，可用逗号分隔',
+            hintText: context.tr(T('回车添加，可用逗号分隔')),
             isDense: true,
             suffixIcon: IconButton(
               icon: const Icon(Icons.add, size: 18),

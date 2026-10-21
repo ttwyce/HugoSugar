@@ -63,7 +63,7 @@ class _PostsPageState extends State<PostsPage> {
       _showReport(report);
     } catch (e) {
       if (!mounted) return;
-      _showSnack('导出失败：$e');
+      _showSnack(TP('导出失败：{}', [e]));
     }
   }
 
@@ -72,43 +72,52 @@ class _PostsPageState extends State<PostsPage> {
     final conflict = await showDialog<ImportConflict>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('导入文章'),
+        title: Text(context.tr(T('导入文章'))),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
             child: Text(
-              '遇到同名文件时：',
+              context.tr(T('遇到同名文件时：')),
               style: TextStyle(fontSize: 12, color: ctx.appColors.textTertiary),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, ImportConflict.skip),
-            child: const ListTile(
+            child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.skip_next, size: 20),
-              title: Text('跳过已存在的'),
-              subtitle: Text('保留仓库里的版本（推荐）', style: TextStyle(fontSize: 11)),
+              title: Text(context.tr(T('跳过已存在的'))),
+              subtitle: Text(
+                context.tr(T('保留仓库里的版本（推荐）')),
+                style: TextStyle(fontSize: 11),
+              ),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, ImportConflict.rename),
-            child: const ListTile(
+            child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.copy_all_outlined, size: 20),
-              title: Text('存为新文件'),
-              subtitle: Text('自动加 -2、-3 后缀', style: TextStyle(fontSize: 11)),
+              title: Text(context.tr(T('存为新文件'))),
+              subtitle: Text(
+                context.tr(T('自动加 -2、-3 后缀')),
+                style: TextStyle(fontSize: 11),
+              ),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, ImportConflict.overwrite),
-            child: const ListTile(
+            child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.swap_horiz, size: 20),
-              title: Text('覆盖已存在的'),
-              subtitle: Text('仓库里的同名文件会被替换', style: TextStyle(fontSize: 11)),
+              title: Text(context.tr(T('覆盖已存在的'))),
+              subtitle: Text(
+                context.tr(T('仓库里的同名文件会被替换')),
+                style: TextStyle(fontSize: 11),
+              ),
             ),
           ),
         ],
@@ -124,7 +133,7 @@ class _PostsPageState extends State<PostsPage> {
       _showReport(report);
     } catch (e) {
       if (!mounted) return;
-      _showSnack('导入失败：$e');
+      _showSnack(TP('导入失败：{}', [e]));
     }
   }
 
@@ -146,7 +155,7 @@ class _PostsPageState extends State<PostsPage> {
       builder: (ctx) {
         final c = ctx.appColors;
         return AlertDialog(
-          title: Text(report.ok ? '完成' : '部分完成'),
+          title: Text(report.ok ? T('完成') : T('部分完成')),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView(
@@ -158,7 +167,10 @@ class _PostsPageState extends State<PostsPage> {
                 ),
                 if (report.failed.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Text('失败', style: TextStyle(fontSize: 12, color: c.danger)),
+                  Text(
+                    context.tr(T('失败')),
+                    style: TextStyle(fontSize: 12, color: c.danger),
+                  ),
                   for (final e in report.failed.entries)
                     Text(
                       '· ${e.key}：${e.value}',
@@ -168,7 +180,7 @@ class _PostsPageState extends State<PostsPage> {
                 if (report.skipped.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    '跳过',
+                    context.tr(T('跳过')),
                     style: TextStyle(fontSize: 12, color: c.textTertiary),
                   ),
                   for (final e in report.skipped.entries)
@@ -183,7 +195,7 @@ class _PostsPageState extends State<PostsPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('知道了'),
+              child: Text(context.tr(T('知道了'))),
             ),
           ],
         );
@@ -223,7 +235,7 @@ class _PostsPageState extends State<PostsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('文章'),
+        title: Text(context.tr(T('文章'))),
         actions: [
           IconButton(
             onPressed: sc.stage == SiteStage.ready
@@ -232,27 +244,29 @@ class _PostsPageState extends State<PostsPage> {
             icon: Icon(
               _showFilters ? Icons.filter_list_off : Icons.filter_list,
             ),
-            tooltip: '筛选',
+            tooltip: context.tr(T('筛选')),
           ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready ? sc.refresh : null,
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
+            tooltip: context.tr(T('刷新')),
           ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready
                 ? () => _openTrash(sc)
                 : null,
             icon: Icon(sc.trashCount > 0 ? Icons.delete : Icons.delete_outline),
-            tooltip: sc.trashCount > 0 ? '回收站（${sc.trashCount}）' : '回收站',
+            tooltip: sc.trashCount > 0
+                ? TP('回收站（{}）', [sc.trashCount])
+                : T('回收站'),
           ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready ? () => _openPush(sc) : null,
             icon: const Icon(Icons.cloud_upload_outlined),
-            tooltip: '推送到 GitHub',
+            tooltip: context.tr(T('推送到 GitHub')),
           ),
           PopupMenuButton<String>(
-            tooltip: '导入导出',
+            tooltip: context.tr(T('导入导出')),
             enabled: sc.stage == SiteStage.ready,
             icon: const Icon(Icons.swap_vert),
             onSelected: (v) {
@@ -266,9 +280,9 @@ class _PostsPageState extends State<PostsPage> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.download_outlined, size: 20),
-                  title: Text(ctx.tr('导出全部文章')),
+                  title: Text(ctx.tr(T('导出全部文章'))),
                   subtitle: Text(
-                    ctx.tr('打包成 zip 并分享'),
+                    ctx.tr(T('打包成 zip 并分享')),
                     style: const TextStyle(fontSize: 11),
                   ),
                 ),
@@ -279,9 +293,9 @@ class _PostsPageState extends State<PostsPage> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.upload_outlined, size: 20),
-                  title: Text(ctx.tr('导入文章')),
+                  title: Text(ctx.tr(T('导入文章'))),
                   subtitle: Text(
-                    ctx.tr('从 zip 或 .md 导入'),
+                    ctx.tr(T('从 zip 或 .md 导入')),
                     style: const TextStyle(fontSize: 11),
                   ),
                 ),
@@ -293,13 +307,13 @@ class _PostsPageState extends State<PostsPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: sc.stage == SiteStage.ready ? () => _newPost(sc) : null,
-        tooltip: '新建文章',
+        tooltip: context.tr(T('新建文章')),
         child: const Icon(Icons.add),
       ),
       body: switch (sc.stage) {
-        SiteStage.ready when sc.posts.isEmpty => const EmptyState(
+        SiteStage.ready when sc.posts.isEmpty => EmptyState(
           icon: Icons.description_outlined,
-          text: '还没有文章',
+          text: T('还没有文章'),
         ),
         SiteStage.ready => RefreshIndicator(
           onRefresh: sc.refresh,
@@ -326,8 +340,8 @@ class _PostsPageState extends State<PostsPage> {
               ],
               SectionHeader(
                 hasActiveFilter
-                    ? '筛选结果 · ${visible.length}'
-                    : '全部 · ${visible.length}',
+                    ? TP('筛选结果 · {}', [visible.length])
+                    : TP('全部 · {}', [visible.length]),
               ),
               if (hasActiveFilter)
                 Padding(
@@ -360,15 +374,15 @@ class _PostsPageState extends State<PostsPage> {
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(0, 0),
                         ),
-                        child: const Text('清除'),
+                        child: Text(context.tr(T('清除'))),
                       ),
                     ],
                   ),
                 ),
               if (visible.isEmpty)
-                const EmptyState(
+                EmptyState(
                   icon: Icons.filter_alt_off_outlined,
-                  text: '没有符合条件的文章',
+                  text: T('没有符合条件的文章'),
                 )
               else
                 for (var i = 0; i < visible.length; i++) ...[
@@ -388,8 +402,8 @@ class _PostsPageState extends State<PostsPage> {
         _ => EmptyState(
           icon: Icons.folder_outlined,
           text: sc.stage == SiteStage.failed
-              ? '站点接入失败，请到「站点」页重试'
-              : '请先到「站点」页接入 Git 仓库',
+              ? T('站点接入失败，请到「站点」页重试')
+              : T('请先到「站点」页接入 Git 仓库'),
         ),
       },
     );
@@ -397,10 +411,10 @@ class _PostsPageState extends State<PostsPage> {
 
   String _describeFilter() {
     final parts = <String>[];
-    if (_filter == _Filter.drafts) parts.add('草稿');
-    if (_filter == _Filter.published) parts.add('已发布');
-    if (_category != null) parts.add('分类：$_category');
-    if (_tag != null) parts.add('标签：$_tag');
+    if (_filter == _Filter.drafts) parts.add(T('草稿'));
+    if (_filter == _Filter.published) parts.add(T('已发布'));
+    if (_category != null) parts.add(TP('分类：{}', [_category]));
+    if (_tag != null) parts.add(TP('标签：{}', [_tag]));
     return parts.join(' · ');
   }
 
@@ -474,7 +488,7 @@ class _PostsPageState extends State<PostsPage> {
             ),
             ListTile(
               leading: const Icon(Icons.edit_outlined, size: 20),
-              title: const Text('打开编辑'),
+              title: Text(context.tr(T('打开编辑'))),
               onTap: () => Navigator.pop(ctx, 'open'),
             ),
             ListTile(
@@ -484,12 +498,15 @@ class _PostsPageState extends State<PostsPage> {
                     : Icons.visibility_off_outlined,
                 size: 20,
               ),
-              title: Text(post.draft ? '发布这篇' : '改为草稿'),
+              title: Text(post.draft ? T('发布这篇') : T('改为草稿')),
               onTap: () => Navigator.pop(ctx, 'toggleDraft'),
             ),
             ListTile(
               leading: Icon(Icons.delete_outline, size: 20, color: c.danger),
-              title: Text('删除', style: TextStyle(color: c.danger)),
+              title: Text(
+                context.tr(T('删除')),
+                style: TextStyle(color: c.danger),
+              ),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
             const SizedBox(height: AppSpace.xs),
@@ -521,7 +538,9 @@ class _PostsPageState extends State<PostsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          result.ok ? (post.draft ? '已发布' : '已改为草稿') : '修改失败：${result.message}',
+          result.ok
+              ? (post.draft ? T('已发布') : T('已改为草稿'))
+              : TP('修改失败：{}', [result.message]),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -533,20 +552,19 @@ class _PostsPageState extends State<PostsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除这篇文章？'),
+        title: Text(context.tr(T('删除这篇文章？'))),
         content: Text(
-          '${post.title}\n${post.relativePath}\n\n'
-          '会移到回收站，可以在回收站里恢复。',
+          TP('{}\n{}\n\n会移到回收站，可以在回收站里恢复。', [post.title, post.relativePath]),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: c.danger),
-            child: const Text('移到回收站'),
+            child: Text(context.tr(T('移到回收站'))),
           ),
         ],
       ),
@@ -556,7 +574,9 @@ class _PostsPageState extends State<PostsPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(deleted ? '已移到回收站' : '删除失败：${sc.error ?? "未知错误"}'),
+        content: Text(
+          deleted ? T('已移到回收站') : TP('删除失败：{}', [sc.error ?? "未知错误"]),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -591,7 +611,7 @@ class _PostsPageState extends State<PostsPage> {
     if (path == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(sc.error ?? '创建失败')));
+      ).showSnackBar(SnackBar(content: Text(sc.error ?? T('创建失败'))));
       return;
     }
 
@@ -649,20 +669,20 @@ class _FilterBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Rail(
-            label: '状态',
+            label: T('状态'),
             children: [
               _Chip(
-                text: '全部 $totalCount',
+                text: TP('全部 {}', [totalCount]),
                 selected: filter == _Filter.all,
                 onTap: () => onFilter(_Filter.all),
               ),
               _Chip(
-                text: '草稿 $draftCount',
+                text: TP('草稿 {}', [draftCount]),
                 selected: filter == _Filter.drafts,
                 onTap: () => onFilter(_Filter.drafts),
               ),
               _Chip(
-                text: '已发布 $publishedCount',
+                text: TP('已发布 {}', [publishedCount]),
                 selected: filter == _Filter.published,
                 onTap: () => onFilter(_Filter.published),
               ),
@@ -671,10 +691,10 @@ class _FilterBar extends StatelessWidget {
 
           if (categories.isNotEmpty)
             _Rail(
-              label: '分类',
+              label: T('分类'),
               children: [
                 _Chip(
-                  text: '不限',
+                  text: T('不限'),
                   selected: category == null,
                   onTap: () => onCategory(null),
                 ),
@@ -689,10 +709,10 @@ class _FilterBar extends StatelessWidget {
 
           if (tags.isNotEmpty)
             _Rail(
-              label: '标签',
+              label: T('标签'),
               children: [
                 _Chip(
-                  text: '不限',
+                  text: T('不限'),
                   selected: tag == null,
                   onTap: () => onTag(null),
                 ),
@@ -714,8 +734,9 @@ class _FilterBar extends StatelessWidget {
                 0,
               ),
               child: Text(
-                '这些文章还没有分类或标签。'
-                '在文章 Front Matter 里加 categories / tags 后即可在这里筛选。',
+                T(
+                  '这些文章还没有分类或标签。在文章 Front Matter 里加 categories / tags 后即可在这里筛选。',
+                ),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.6,
@@ -871,7 +892,7 @@ class _PostRow extends StatelessWidget {
                 ),
                 if (post.draft) ...[
                   const SizedBox(width: AppSpace.xs),
-                  const MiniTag('草稿'),
+                  MiniTag(T('草稿')),
                 ],
               ],
             ),
@@ -989,7 +1010,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
     if (title.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请填写标题')));
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('请填写标题')))));
       return;
     }
     Navigator.of(context).pop(
@@ -1023,7 +1044,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '新建文章',
+                context.tr(T('新建文章')),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1037,8 +1058,8 @@ class _NewPostSheetState extends State<_NewPostSheet> {
                 controller: _titleCtrl,
                 autofocus: true,
                 style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  hintText: '标题',
+                decoration: InputDecoration(
+                  hintText: context.tr(T('标题')),
                   isDense: true,
                 ),
                 textInputAction: TextInputAction.next,
@@ -1050,8 +1071,8 @@ class _NewPostSheetState extends State<_NewPostSheet> {
                 controller: _descCtrl,
                 style: const TextStyle(fontSize: 14),
                 maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: '简介（可选，会写进 description）',
+                decoration: InputDecoration(
+                  hintText: context.tr(T('简介（可选，会写进 description）')),
                   isDense: true,
                 ),
               ),
@@ -1059,7 +1080,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
 
               // 分类
               Text(
-                '分类',
+                context.tr(T('分类')),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.4,
@@ -1070,7 +1091,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
               ChipEditor(
                 values: _categories,
                 allValues: widget.categories,
-                hint: '添加分类，回车确认（可逗号分隔）',
+                hint: T('添加分类，回车确认（可逗号分隔）'),
                 controller: _catInputCtrl,
                 onChanged: (v) => setState(() => _categories = v),
               ),
@@ -1078,7 +1099,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
 
               // 标签
               Text(
-                '标签',
+                context.tr(T('标签')),
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.4,
@@ -1089,7 +1110,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
               ChipEditor(
                 values: _tags,
                 allValues: widget.tags,
-                hint: '添加标签，回车确认（可逗号分隔）',
+                hint: T('添加标签，回车确认（可逗号分隔）'),
                 controller: _tagInputCtrl,
                 onChanged: (v) => setState(() => _tags = v),
               ),
@@ -1103,11 +1124,11 @@ class _NewPostSheetState extends State<_NewPostSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '保存为草稿',
+                          context.tr(T('保存为草稿')),
                           style: TextStyle(fontSize: 14, color: c.textPrimary),
                         ),
                         Text(
-                          '草稿不会出现在站点上，可在编辑器里随时转为发布',
+                          context.tr(T('草稿不会出现在站点上，可在编辑器里随时转为发布')),
                           style: TextStyle(
                             fontSize: 11,
                             height: 1.5,
@@ -1129,7 +1150,7 @@ class _NewPostSheetState extends State<_NewPostSheet> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: _submit,
-                  child: const Text('创建并开始写'),
+                  child: Text(context.tr(T('创建并开始写'))),
                 ),
               ),
             ],

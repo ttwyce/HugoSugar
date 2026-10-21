@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../core/settings/settings_controller.dart';
 import '../settings/author_identity_dialog.dart';
@@ -36,7 +37,6 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   final _searchCtrl = TextEditingController();
 
   bool _obscure = true;
-
 
   /// 正在校验 token / 拉列表
   bool _loading = false;
@@ -88,7 +88,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   Future<void> _loadRepos() async {
     final token = _tokenCtrl.text.trim();
     if (token.isEmpty) {
-      _showError('请先填写访问令牌');
+      _showError(T('请先填写访问令牌'));
       return;
     }
 
@@ -162,13 +162,14 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     final sc = widget.settingsController;
 
     // 已经填过就不打扰
-    if (sc.authorName.trim().isNotEmpty &&
-        sc.authorEmail.trim().isNotEmpty) {
+    if (sc.authorName.trim().isNotEmpty && sc.authorEmail.trim().isNotEmpty) {
       return true;
     }
 
     // 尝试自动获取。失败返回 null，不抛异常。
-    final suggestion = await fetchAuthorSuggestion(token: _tokenCtrl.text.trim());
+    final suggestion = await fetchAuthorSuggestion(
+      token: _tokenCtrl.text.trim(),
+    );
 
     if (suggestion != null && suggestion.isComplete) {
       await sc.setAuthorIdentity(
@@ -202,9 +203,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── 第二步：选仓库并克隆 ────────────────────────────
@@ -221,11 +220,11 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     if (!await _ensureAuthorIdentityOrAsk()) return;
 
     if (repo.isEmpty) {
-      _showError('${repo.fullName} 是空仓库，先给它加一个提交再接入');
+      _showError(TP('{} 是空仓库，先给它加一个提交再接入', [repo.fullName]));
       return;
     }
     if (repo.archived) {
-      _showError('${repo.fullName} 已归档，无法推送');
+      _showError(TP('{} 已归档，无法推送', [repo.fullName]));
       return;
     }
 
@@ -275,7 +274,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_verified ? '选择仓库' : '接入 GitHub'),
+        title: Text(_verified ? T('选择仓库') : T('接入 GitHub')),
         actions: [
           if (_verified)
             TextButton(
@@ -284,7 +283,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
                 _repos = const [];
                 _login = null;
               }),
-              child: const Text('换令牌'),
+              child: Text(context.tr(T('换令牌'))),
             ),
         ],
       ),
@@ -297,7 +296,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        const SectionHeader('访问令牌'),
+        SectionHeader(T('访问令牌')),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
           child: TextField(
@@ -308,8 +307,8 @@ class _ConnectSitePageState extends State<ConnectSitePage>
             enabled: !_loading,
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'ghp_... 或 github_pat_...',
-              helperText: '需要 repo 权限才能看到私有仓库',
+              hintText: context.tr(T('ghp_... 或 github_pat_...')),
+              helperText: T('需要 repo 权限才能看到私有仓库'),
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscure ? Icons.visibility_off : Icons.visibility,
@@ -342,10 +341,10 @@ class _ConnectSitePageState extends State<ConnectSitePage>
                           ),
                         ),
                         const SizedBox(width: AppSpace.xs),
-                        const Text('正在读取仓库…'),
+                        Text(context.tr(T('正在读取仓库…'))),
                       ],
                     )
-                  : const Text('读取我的仓库'),
+                  : Text(context.tr(T('读取我的仓库'))),
             ),
           ),
         ),
@@ -365,7 +364,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
           const SizedBox(height: AppSpace.md),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
-            child: _ErrorBox(title: '请求失败', detail: _otherError!),
+            child: _ErrorBox(title: T('请求失败'), detail: _otherError!),
           ),
         ],
 
@@ -373,9 +372,11 @@ class _ConnectSitePageState extends State<ConnectSitePage>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
           child: Text(
-            '令牌只用于本机发起 Git 请求，保存在应用私有目录，不上传任何服务器。\n'
-            '在 GitHub → Settings → Developer settings → '
-            'Personal access tokens 生成，勾选 repo 权限。',
+            T(
+              '令牌只用于本机发起 Git 请求，保存在应用私有目录，不上传任何服务器。\n'
+              '在 GitHub → Settings → Developer settings → '
+              'Personal access tokens 生成，勾选 repo 权限。',
+            ),
             style: TextStyle(fontSize: 12, height: 1.7, color: c.textTertiary),
           ),
         ),
@@ -386,15 +387,15 @@ class _ConnectSitePageState extends State<ConnectSitePage>
   String _ghTitle(GitHubException e) {
     switch (e.kind) {
       case GitHubErrorKind.badToken:
-        return '令牌无效';
+        return T('令牌无效');
       case GitHubErrorKind.forbidden:
-        return '权限不足';
+        return T('权限不足');
       case GitHubErrorKind.notFound:
-        return '仓库不存在';
+        return T('仓库不存在');
       case GitHubErrorKind.network:
-        return '网络错误';
+        return T('网络错误');
       case GitHubErrorKind.unknown:
-        return '请求失败';
+        return T('请求失败');
     }
   }
 
@@ -403,9 +404,10 @@ class _ConnectSitePageState extends State<ConnectSitePage>
     final filtered = _query.isEmpty
         ? _repos
         : _repos
-            .where((r) =>
-                r.fullName.toLowerCase().contains(_query.toLowerCase()))
-            .toList();
+              .where(
+                (r) => r.fullName.toLowerCase().contains(_query.toLowerCase()),
+              )
+              .toList();
 
     return Column(
       children: [
@@ -433,7 +435,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
                     ),
                   ),
                   const SizedBox(width: AppSpace.xs),
-                  MiniTag('${_repos.length} 个仓库'),
+                  MiniTag(TP('{} 个仓库', [_repos.length])),
                 ],
               ),
               const SizedBox(height: AppSpace.sm),
@@ -442,7 +444,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
                 onChanged: (v) => setState(() => _query = v.trim()),
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: '搜索仓库',
+                  hintText: context.tr(T('搜索仓库')),
                   prefixIcon: const Icon(Icons.search, size: 18),
                   isDense: true,
                   suffixIcon: _query.isEmpty
@@ -466,7 +468,7 @@ class _ConnectSitePageState extends State<ConnectSitePage>
                   icon: _repos.isEmpty
                       ? Icons.folder_off_outlined
                       : Icons.search_off,
-                  text: _repos.isEmpty ? '这个令牌看不到任何仓库' : '没有匹配的仓库',
+                  text: _repos.isEmpty ? T('这个令牌看不到任何仓库') : T('没有匹配的仓库'),
                 )
               : ListView.separated(
                   itemCount: filtered.length,
@@ -533,11 +535,11 @@ class _RepoRow extends StatelessWidget {
                         ),
                         if (repo.archived) ...[
                           const SizedBox(width: AppSpace.xs),
-                          const MiniTag('已归档'),
+                          MiniTag(T('已归档')),
                         ],
                         if (repo.isEmpty) ...[
                           const SizedBox(width: AppSpace.xs),
-                          const MiniTag('空仓库'),
+                          MiniTag(T('空仓库')),
                         ],
                       ],
                     ),
@@ -581,7 +583,7 @@ class _CloningOverlay extends StatelessWidget {
     final pct = progress == null ? null : (progress! * 100).round();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('正在接入')),
+      appBar: AppBar(title: Text(context.tr(T('正在接入')))),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.xxl),
@@ -599,7 +601,7 @@ class _CloningOverlay extends StatelessWidget {
               ),
               const SizedBox(height: AppSpace.md),
               Text(
-                '正在克隆',
+                context.tr(T('正在克隆')),
                 style: TextStyle(
                   fontSize: 15,
                   height: 1.4,
@@ -620,10 +622,7 @@ class _CloningOverlay extends StatelessWidget {
                 const SizedBox(height: AppSpace.xxs),
                 Text(
                   '$pct%',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: c.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
               ],
             ],
@@ -675,11 +674,7 @@ class _ErrorBox extends StatelessWidget {
           const SizedBox(height: AppSpace.xxs),
           Text(
             detail,
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.6,
-              color: c.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, height: 1.6, color: c.textSecondary),
           ),
           if (hint != null) ...[
             const SizedBox(height: AppSpace.xxs),

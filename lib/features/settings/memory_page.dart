@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/ai_controller.dart';
@@ -35,10 +36,12 @@ class _MemoryPageState extends State<MemoryPage> {
     final list = _filter.trim().isEmpty
         ? all
         : all
-            .where((m) =>
-                m.content.contains(_filter) ||
-                MemoryCategory.label(m.category).contains(_filter))
-            .toList();
+              .where(
+                (m) =>
+                    m.content.contains(_filter) ||
+                    MemoryCategory.label(m.category).contains(_filter),
+              )
+              .toList();
 
     // 按分类分组展示：模型读的是分组后的 Prompt，
     // 用户在这里看到的也应该是同一形状。
@@ -49,11 +52,11 @@ class _MemoryPageState extends State<MemoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('记忆库（${all.length}）'),
+        title: Text(TP('记忆库（{}）', [all.length])),
         actions: [
           if (all.isNotEmpty)
             IconButton(
-              tooltip: '清空',
+              tooltip: context.tr(T('清空')),
               icon: const Icon(Icons.delete_sweep_outlined, size: 20),
               onPressed: _confirmClearAll,
             ),
@@ -66,8 +69,8 @@ class _MemoryPageState extends State<MemoryPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: TextField(
-                    decoration: const InputDecoration(
-                      hintText: '搜索记忆…',
+                    decoration: InputDecoration(
+                      hintText: context.tr(T('搜索记忆…')),
                       isDense: true,
                       prefixIcon: Icon(Icons.search, size: 18),
                     ),
@@ -96,9 +99,9 @@ class _MemoryPageState extends State<MemoryPage> {
                         ],
                       const SizedBox(height: 16),
                       Text(
-                        '这些内容会加进每次对话的 System Prompt。\n'
-                        '记忆是「关于你的事实」，不是给 AI 的指令 —— '
-                        '发现写成命令的（如「你要…」），建议删掉。',
+                        T(
+                          '这些内容会加进每次对话的 System Prompt。\n记忆是「关于你的事实」，不是给 AI 的指令 —— 发现写成命令的（如「你要…」），建议删掉。',
+                        ),
                         style: TextStyle(fontSize: 11, color: c.textTertiary),
                       ),
                     ],
@@ -119,16 +122,18 @@ class _MemoryPageState extends State<MemoryPage> {
             Icon(Icons.psychology_outlined, size: 40, color: c.textTertiary),
             const SizedBox(height: 12),
             Text(
-              '还没有记忆',
+              context.tr(T('还没有记忆')),
               style: TextStyle(fontSize: 14, color: c.textSecondary),
             ),
             const SizedBox(height: 8),
             Text(
-              '和 AI 聊几次，它会自己记下你的写作风格、\n'
-              '性格偏好和工作习惯。也可以在对话里直接说\n'
-              '「记住我喜欢…」。',
+              T('和 AI 聊几次，它会自己记下你的写作风格、\n性格偏好和工作习惯。也可以在对话里直接说\n「记住我喜欢…」。'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: c.textTertiary, height: 1.6),
+              style: TextStyle(
+                fontSize: 12,
+                color: c.textTertiary,
+                height: 1.6,
+              ),
             ),
           ],
         ),
@@ -171,12 +176,12 @@ class _MemoryPageState extends State<MemoryPage> {
             ),
             IconButton(
               icon: const Icon(Icons.edit_outlined, size: 16),
-              tooltip: '编辑',
+              tooltip: context.tr(T('编辑')),
               onPressed: () => _edit(m),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 16),
-              tooltip: '删除',
+              tooltip: context.tr(T('删除')),
               onPressed: () => _delete(m),
             ),
           ],
@@ -196,7 +201,7 @@ class _MemoryPageState extends State<MemoryPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          title: const Text('编辑记忆'),
+          title: Text(context.tr(T('编辑记忆'))),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -205,12 +210,12 @@ class _MemoryPageState extends State<MemoryPage> {
                 minLines: 2,
                 maxLines: 5,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: '关于用户的事实'),
+                decoration: InputDecoration(hintText: context.tr(T('关于用户的事实'))),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: category,
-                decoration: const InputDecoration(labelText: '分类'),
+                decoration: InputDecoration(labelText: context.tr(T('分类'))),
                 items: [
                   for (final cat in MemoryCategory.all)
                     DropdownMenuItem(
@@ -225,11 +230,11 @@ class _MemoryPageState extends State<MemoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(context.tr(T('取消'))),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('保存'),
+              child: Text(context.tr(T('保存'))),
             ),
           ],
         ),
@@ -251,16 +256,16 @@ class _MemoryPageState extends State<MemoryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除这条记忆？'),
+        title: Text(context.tr(T('删除这条记忆？'))),
         content: Text(m.content, style: const TextStyle(fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(context.tr(T('删除'))),
           ),
         ],
       ),
@@ -274,16 +279,16 @@ class _MemoryPageState extends State<MemoryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空全部记忆？'),
-        content: const Text('AI 将不再记得你的偏好。此操作不可撤销。'),
+        title: Text(context.tr(T('清空全部记忆？'))),
+        content: Text(context.tr(T('AI 将不再记得你的偏好。此操作不可撤销。'))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
+            child: Text(context.tr(T('清空'))),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/note_context.dart';
@@ -59,7 +60,7 @@ class _NotesPageState extends State<NotesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('想法'),
+        title: Text(context.tr(T('想法'))),
         actions: [
           IconButton(
             onPressed: () {
@@ -70,7 +71,7 @@ class _NotesPageState extends State<NotesPage> {
               }
             },
             icon: Icon(_searchOpen ? Icons.search_off : Icons.search),
-            tooltip: '搜索',
+            tooltip: context.tr(T('搜索')),
           ),
           // 回收站移到右上角：它是「低频但有明确去处」的功能，
           // 和搜索并列比混在下面的视图 tab 里更符合导航直觉。
@@ -80,11 +81,11 @@ class _NotesPageState extends State<NotesPage> {
               c.view == NoteView.trashed ? NoteView.active : NoteView.trashed,
             ),
             icon: Icon(
-              c.view == NoteView.trashed
-                  ? Icons.delete
-                  : Icons.delete_outline,
+              c.view == NoteView.trashed ? Icons.delete : Icons.delete_outline,
             ),
-            tooltip: c.trashCount > 0 ? '回收站（${c.trashCount}）' : '回收站',
+            tooltip: c.trashCount > 0
+                ? TP('回收站（{}）', [c.trashCount])
+                : T('回收站'),
           ),
           // AI 读取范围设置。入口放在这里而不是设置页：
           // 分组数据只有本页有，跨页传控制器只为渲染一个多选列表不值得。
@@ -96,14 +97,14 @@ class _NotesPageState extends State<NotesPage> {
                     ? Icons.psychology
                     : Icons.psychology_outlined,
               ),
-              tooltip: 'AI 读取范围',
+              tooltip: context.tr(T('AI 读取范围')),
             ),
           const SizedBox(width: AppSpace.xs),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _newNote,
-        tooltip: '新建想法',
+        tooltip: context.tr(T('新建想法')),
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -122,7 +123,7 @@ class _NotesPageState extends State<NotesPage> {
                 onChanged: c.setQuery,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: '搜索想法标题和正文',
+                  hintText: context.tr(T('搜索想法标题和正文')),
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 18),
                   suffixIcon: c.query.isEmpty
@@ -160,7 +161,7 @@ class _NotesPageState extends State<NotesPage> {
                             child: OutlinedButton.icon(
                               onPressed: _purgeAll,
                               icon: const Icon(Icons.delete_forever, size: 18),
-                              label: const Text('清空回收站'),
+                              label: Text(context.tr(T('清空回收站'))),
                             ),
                           )
                         : null,
@@ -212,7 +213,7 @@ class _NotesPageState extends State<NotesPage> {
                       AppSpace.xs,
                     ),
                     child: Text(
-                      'AI 读取范围',
+                      context.tr(T('AI 读取范围')),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -228,10 +229,13 @@ class _NotesPageState extends State<NotesPage> {
                       if (mounted) setState(() {});
                     },
                     secondary: const Icon(Icons.psychology_outlined),
-                    title: const Text('允许 AI 读取想法'),
+                    title: Text(context.tr(T('允许 AI 读取想法'))),
                     subtitle: Text(
-                      '关闭时 AI 看不到任何想法，除非你在对话里指定',
-                      style: TextStyle(fontSize: 12, color: colors.textTertiary),
+                      context.tr(T('关闭时 AI 看不到任何想法，除非你在对话里指定')),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.textTertiary,
+                      ),
                     ),
                   ),
                   if (sc.aiReadNotes) ...[
@@ -243,8 +247,11 @@ class _NotesPageState extends State<NotesPage> {
                         AppSpace.xxs,
                       ),
                       child: Text(
-                        '限定分组（不选 = 全部）',
-                        style: TextStyle(fontSize: 12, color: colors.textTertiary),
+                        context.tr(T('限定分组（不选 = 全部）')),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.textTertiary,
+                        ),
                       ),
                     ),
                     for (final cat in cats)
@@ -264,7 +271,7 @@ class _NotesPageState extends State<NotesPage> {
                         dense: true,
                         title: Text(cat.name),
                         subtitle: Text(
-                          '${c.store.countInCategory(cat.id)} 条',
+                          TP('{} 条', [c.store.countInCategory(cat.id)]),
                           style: TextStyle(
                             fontSize: 11,
                             color: colors.textTertiary,
@@ -275,7 +282,7 @@ class _NotesPageState extends State<NotesPage> {
                       Padding(
                         padding: const EdgeInsets.all(AppSpace.md),
                         child: Text(
-                          '还没有分组。可以在想法页新建分组后再回来限定范围。',
+                          context.tr(T('还没有分组。可以在想法页新建分组后再回来限定范围。')),
                           style: TextStyle(
                             fontSize: 12,
                             color: colors.textTertiary,
@@ -333,11 +340,8 @@ class _NotesPageState extends State<NotesPage> {
   Future<void> _open(Note note, {bool isNew = false}) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => NoteEditorPage(
-          controller: c,
-          noteId: note.id,
-          isNew: isNew,
-        ),
+        builder: (_) =>
+            NoteEditorPage(controller: c, noteId: note.id, isNew: isNew),
       ),
     );
     if (changed == true && mounted) setState(() {});
@@ -347,16 +351,16 @@ class _NotesPageState extends State<NotesPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空回收站'),
-        content: Text('将永久删除 ${c.trashCount} 条笔记，无法恢复。'),
+        title: Text(context.tr(T('清空回收站'))),
+        content: Text(TP('将永久删除 {} 条笔记，无法恢复。', [c.trashCount])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('永久删除'),
+            child: Text(context.tr(T('永久删除'))),
           ),
         ],
       ),
@@ -364,9 +368,9 @@ class _NotesPageState extends State<NotesPage> {
     if (ok != true) return;
     final n = await c.purgeAll();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已删除 $n 条')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(TP('已删除 {} 条', [n]))));
   }
 
   /// 长按操作菜单
@@ -380,7 +384,7 @@ class _NotesPageState extends State<NotesPage> {
           children: [
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('编辑'),
+              title: Text(context.tr(T('编辑'))),
               enabled: !inTrash,
               onTap: () {
                 Navigator.pop(ctx);
@@ -392,10 +396,10 @@ class _NotesPageState extends State<NotesPage> {
                 leading: Icon(
                   note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
                 ),
-                title: Text(note.pinned ? '取消精选' : '精选'),
+                title: Text(note.pinned ? T('取消精选') : T('精选')),
                 subtitle: note.pinned
                     ? null
-                    : const Text('精选的想法会优先提供给 AI'),
+                    : Text(context.tr(T('精选的想法会优先提供给 AI'))),
                 onTap: () {
                   Navigator.pop(ctx);
                   c.togglePin(note.id);
@@ -404,7 +408,7 @@ class _NotesPageState extends State<NotesPage> {
             if (!inTrash)
               ListTile(
                 leading: const Icon(Icons.folder_outlined),
-                title: const Text('移动到分类'),
+                title: Text(context.tr(T('移动到分类'))),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickCategory(note);
@@ -413,7 +417,7 @@ class _NotesPageState extends State<NotesPage> {
             if (inTrash) ...[
               ListTile(
                 leading: const Icon(Icons.restore),
-                title: const Text('恢复'),
+                title: Text(context.tr(T('恢复'))),
                 onTap: () {
                   Navigator.pop(ctx);
                   c.restoreNote(note.id);
@@ -421,7 +425,7 @@ class _NotesPageState extends State<NotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.delete_forever),
-                title: const Text('永久删除'),
+                title: Text(context.tr(T('永久删除'))),
                 onTap: () {
                   Navigator.pop(ctx);
                   c.purgeNote(note.id);
@@ -430,7 +434,7 @@ class _NotesPageState extends State<NotesPage> {
             ] else
               ListTile(
                 leading: const Icon(Icons.delete_outline),
-                title: const Text('移到回收站'),
+                title: Text(context.tr(T('移到回收站'))),
                 onTap: () {
                   Navigator.pop(ctx);
                   c.trashNote(note.id);
@@ -450,10 +454,10 @@ class _NotesPageState extends State<NotesPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const ListTile(title: Text('移动到分类')),
+            ListTile(title: Text(context.tr(T('移动到分类')))),
             ListTile(
               leading: const Icon(Icons.folder_off_outlined),
-              title: const Text('不分类'),
+              title: Text(context.tr(T('不分类'))),
               trailing: note.categoryId == null
                   ? const Icon(Icons.check, size: 18)
                   : null,
@@ -476,7 +480,7 @@ class _NotesPageState extends State<NotesPage> {
               ),
             ListTile(
               leading: const Icon(Icons.add),
-              title: const Text('新建分类'),
+              title: Text(context.tr(T('新建分类'))),
               onTap: () {
                 Navigator.pop(ctx);
                 _createCategory();
@@ -488,9 +492,8 @@ class _NotesPageState extends State<NotesPage> {
     );
   }
 
-
   Future<void> _createCategory() async {
-    final name = await _promptText('新建分类', '分类名称');
+    final name = await _promptText(context.tr(T('新建分类')), T('分类名称'));
     if (name == null || name.trim().isEmpty) return;
     await c.createCategory(name.trim());
   }
@@ -505,19 +508,22 @@ class _NotesPageState extends State<NotesPage> {
             ListTile(title: Text(cat.name)),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('重命名'),
+              title: Text(context.tr(T('重命名'))),
               onTap: () async {
                 Navigator.pop(ctx);
-                final name =
-                    await _promptText('重命名分类', '分类名称', initial: cat.name);
+                final name = await _promptText(
+                  context.tr(T('重命名分类')),
+                  T('分类名称'),
+                  initial: cat.name,
+                );
                 if (name == null || name.trim().isEmpty) return;
                 await c.renameCategory(cat.id, name.trim());
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
-              title: const Text('删除分类'),
-              subtitle: const Text('想法不会被删除，只是解除归属'),
+              title: Text(context.tr(T('删除分类'))),
+              subtitle: Text(context.tr(T('想法不会被删除，只是解除归属'))),
               onTap: () {
                 Navigator.pop(ctx);
                 c.deleteCategory(cat.id);
@@ -548,11 +554,11 @@ class _NotesPageState extends State<NotesPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('确定'),
+            child: Text(context.tr(T('确定'))),
           ),
         ],
       ),
@@ -596,7 +602,7 @@ class _CategoryBar extends StatelessWidget {
         children: [
           _chip(
             context: context,
-            label: '全部',
+            label: T('全部'),
             selected: controller.categoryId == null,
             onTap: () => controller.setCategory(null),
           ),
@@ -688,8 +694,8 @@ class _ViewTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final items = <(NoteView, String, int)>[
-      (NoteView.active, '全部', controller.activeCount),
-      (NoteView.pinned, '置顶', controller.pinnedCount),
+      (NoteView.active, T('全部'), controller.activeCount),
+      (NoteView.pinned, T('置顶'), controller.pinnedCount),
     ];
 
     return SizedBox(
@@ -783,12 +789,7 @@ class _MasonryGrid extends StatelessWidget {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.md,
-        0,
-        AppSpace.md,
-        96,
-      ),
+      padding: const EdgeInsets.fromLTRB(AppSpace.md, 0, AppSpace.md, 96),
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -883,7 +884,7 @@ class _NoteCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      note.title.trim().isEmpty ? '无标题' : note.title,
+                      note.title.trim().isEmpty ? T('无标题') : note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -934,7 +935,7 @@ class _NoteCard extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    note.isDeleted ? '已删除' : note.updatedLabel,
+                    note.isDeleted ? T('已删除') : note.updatedLabel,
                     style: TextStyle(
                       fontSize: 11,
                       height: 1.4,
@@ -944,7 +945,7 @@ class _NoteCard extends StatelessWidget {
                   if (note.charCount > 0) ...[
                     const SizedBox(width: 6),
                     Text(
-                      '· ${note.charCount} 字',
+                      TP('· {} 字', [note.charCount]),
                       style: TextStyle(
                         fontSize: 11,
                         height: 1.4,
@@ -973,24 +974,21 @@ class _EmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (searching) {
-      return const EmptyState(
-        icon: Icons.search_off,
-        text: '没有匹配的想法',
-      );
+      return EmptyState(icon: Icons.search_off, text: T('没有匹配的想法'));
     }
     return switch (view) {
-      NoteView.trashed => const EmptyState(
-          icon: Icons.delete_outline,
-          text: '回收站是空的',
-        ),
-      NoteView.pinned => const EmptyState(
-          icon: Icons.push_pin_outlined,
-          text: '还没有精选想法\n精选的想法会优先提供给 AI',
-        ),
-      NoteView.active => const EmptyState(
-          icon: Icons.lightbulb_outline,
-          text: '还没有想法\n随手记一句，之后可以一键转成文章',
-        ),
+      NoteView.trashed => EmptyState(
+        icon: Icons.delete_outline,
+        text: T('回收站是空的'),
+      ),
+      NoteView.pinned => EmptyState(
+        icon: Icons.push_pin_outlined,
+        text: T('还没有精选想法\n精选的想法会优先提供给 AI'),
+      ),
+      NoteView.active => EmptyState(
+        icon: Icons.lightbulb_outline,
+        text: T('还没有想法\n随手记一句，之后可以一键转成文章'),
+      ),
     };
   }
 }

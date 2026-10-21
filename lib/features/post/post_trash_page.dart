@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/site/post_trash_store.dart';
@@ -43,21 +44,21 @@ class _PostTrashPageState extends State<PostTrashPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(items.isEmpty ? '回收站' : '回收站 · ${items.length}'),
+        title: Text(items.isEmpty ? T('回收站') : TP('回收站 · {}', [items.length])),
         actions: [
           if (items.isNotEmpty)
             IconButton(
               onPressed: _purgeAll,
               icon: const Icon(Icons.delete_forever),
-              tooltip: '清空回收站',
+              tooltip: context.tr(T('清空回收站')),
             ),
           const SizedBox(width: AppSpace.xs),
         ],
       ),
       body: items.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.delete_outline,
-              text: '回收站是空的\n删掉的文章会先放到这里',
+              text: T('回收站是空的\n删掉的文章会先放到这里'),
             )
           : ListView.builder(
               padding: const EdgeInsets.only(bottom: 32),
@@ -76,7 +77,7 @@ class _PostTrashPageState extends State<PostTrashPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? '已恢复' : '恢复失败：${sc.error ?? "未知错误"}'),
+        content: Text(ok ? T('已恢复') : TP('恢复失败：{}', [sc.error ?? "未知错误"])),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -87,17 +88,17 @@ class _PostTrashPageState extends State<PostTrashPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('永久删除？'),
-        content: Text('${item.title}\n\n此操作不可恢复。'),
+        title: Text(context.tr(T('永久删除？'))),
+        content: Text(TP('{}\n\n此操作不可恢复。', [item.title])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: c.danger),
-            child: const Text('永久删除'),
+            child: Text(context.tr(T('永久删除'))),
           ),
         ],
       ),
@@ -111,17 +112,17 @@ class _PostTrashPageState extends State<PostTrashPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空回收站？'),
-        content: Text('将永久删除 ${sc.trashCount} 篇文章，无法恢复。'),
+        title: Text(context.tr(T('清空回收站？'))),
+        content: Text(TP('将永久删除 {} 篇文章，无法恢复。', [sc.trashCount])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: c.danger),
-            child: const Text('永久删除'),
+            child: Text(context.tr(T('永久删除'))),
           ),
         ],
       ),
@@ -130,7 +131,10 @@ class _PostTrashPageState extends State<PostTrashPage> {
     final n = await sc.purgeAllTrashedPosts();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已永久删除 $n 篇'), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text(TP('已永久删除 {} 篇', [n])),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 }
@@ -166,7 +170,7 @@ class _TrashTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              item.title.trim().isEmpty ? '无标题' : item.title,
+              item.title.trim().isEmpty ? T('无标题') : item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -185,7 +189,7 @@ class _TrashTile extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              '删除于 ${_fmt(item.deletedAt)}',
+              TP('删除于 {}', [_fmt(item.deletedAt)]),
               style: TextStyle(fontSize: 11, color: c.textTertiary),
             ),
             const SizedBox(height: AppSpace.xxs),
@@ -195,7 +199,7 @@ class _TrashTile extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onRestore,
                   icon: const Icon(Icons.restore, size: 16),
-                  label: const Text('恢复'),
+                  label: Text(context.tr(T('恢复'))),
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                   ),
@@ -203,7 +207,7 @@ class _TrashTile extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onPurge,
                   icon: const Icon(Icons.delete_forever, size: 16),
-                  label: const Text('永久删除'),
+                  label: Text(context.tr(T('永久删除'))),
                   style: TextButton.styleFrom(
                     foregroundColor: c.danger,
                     visualDensity: VisualDensity.compact,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/settings/settings_controller.dart';
@@ -96,24 +97,21 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
     // 留空等于让用户带着一个不关联账号的身份去做提交。
     if (widget.required) {
       if (name.isEmpty) {
-        setState(() => _error = '请填写作者名');
+        setState(() => _error = T('请填写作者名'));
         return;
       }
       if (email.isEmpty) {
-        setState(() => _error = '请填写作者邮箱');
+        setState(() => _error = T('请填写作者邮箱'));
         return;
       }
     }
 
     if (email.isNotEmpty && !_looksLikeEmail(email)) {
-      setState(() => _error = '邮箱格式不对');
+      setState(() => _error = T('邮箱格式不对'));
       return;
     }
 
-    await widget.controller.setAuthorIdentity(
-      name: name,
-      email: email,
-    );
+    await widget.controller.setAuthorIdentity(name: name, email: email);
     if (mounted) Navigator.of(context).pop(true);
   }
 
@@ -137,15 +135,15 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
     // 而 labelText 在未聚焦时会浮在框内挡住它 —— 结果就是用户根本
     // 看不到建议值。helperText 则始终显示在输入框下方。
     final nameHelper = widget.required
-        ? '必填'
+        ? T('必填')
         : (s?.name ?? '').isEmpty
-            ? '留空则用 GitHub 登录名'
-            : '留空则用 ${s!.name}';
+        ? T('留空则用 GitHub 登录名')
+        : TP('留空则用 {}', [s!.name]);
     final emailHelper = widget.required
-        ? '必填，用于把提交关联到你的 GitHub 账号'
+        ? T('必填，用于把提交关联到你的 GitHub 账号')
         : (s?.email ?? '').isEmpty
-            ? '留空则自动推断'
-            : '留空则用 ${s!.email}';
+        ? T('留空则自动推断')
+        : TP('留空则用 {}', [s!.email]);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -159,7 +157,7 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '提交作者',
+            context.tr(T('提交作者')),
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -168,20 +166,15 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
           ),
           const SizedBox(height: AppSpace.xs),
           Text(
-            'GitHub 靠邮箱把提交关联到你的账号。邮箱不对的话，'
-            '提交会显示成陌生名字，贡献格子也不会亮。',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.55,
-              color: c.textTertiary,
-            ),
+            T('GitHub 靠邮箱把提交关联到你的账号。邮箱不对的话，提交会显示成陌生名字，贡献格子也不会亮。'),
+            style: TextStyle(fontSize: 12, height: 1.55, color: c.textTertiary),
           ),
           const SizedBox(height: AppSpace.md),
 
           TextField(
             controller: _nameCtrl,
             decoration: InputDecoration(
-              labelText: '作者名',
+              labelText: context.tr(T('作者名')),
               helperText: nameHelper,
               helperMaxLines: 2,
               helperStyle: TextStyle(fontSize: 11, color: c.textTertiary),
@@ -193,7 +186,7 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             decoration: InputDecoration(
-              labelText: '作者邮箱',
+              labelText: context.tr(T('作者邮箱')),
               helperText: emailHelper,
               helperMaxLines: 2,
               helperStyle: TextStyle(fontSize: 11, color: c.textTertiary),
@@ -218,7 +211,7 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
                       );
                       if (context.mounted) Navigator.of(context).pop();
                     },
-                    child: const Text('恢复自动'),
+                    child: Text(context.tr(T('恢复自动'))),
                   ),
                 ),
                 const SizedBox(width: AppSpace.sm),
@@ -226,7 +219,7 @@ class _AuthorIdentityDialogState extends State<AuthorIdentityDialog> {
               Expanded(
                 child: FilledButton(
                   onPressed: _save,
-                  child: Text(widget.required ? '继续' : '保存'),
+                  child: Text(widget.required ? T('继续') : T('保存')),
                 ),
               ),
             ],

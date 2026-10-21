@@ -4,6 +4,7 @@ import 'package:git2dart/git2dart.dart';
 import 'app/i18n/l10n_scope.dart';
 import 'app/i18n/strings.dart';
 import 'app/theme/app_theme.dart';
+import 'app/theme/reading_prefs.dart';
 import 'app/shell.dart';
 import 'core/ai/ai_controller.dart';
 import 'core/note/note_controller.dart';
@@ -120,16 +121,35 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
     return MaterialApp(
       title: 'HugoSugar',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(accentIndex: _settingsController.accentPreset),
-      darkTheme: AppTheme.dark(accentIndex: _settingsController.accentPreset),
+      theme: AppTheme.light(
+        accentIndex: _settingsController.accentPreset,
+        reading: ReadingPrefs(
+          fontSize: ReadingPrefs.sizeForIndex(_settingsController.bodySizeIndex),
+          fontFamily: _settingsController.bodyFontFamily,
+        ),
+      ),
+      darkTheme: AppTheme.dark(
+        accentIndex: _settingsController.accentPreset,
+        reading: ReadingPrefs(
+          fontSize: ReadingPrefs.sizeForIndex(_settingsController.bodySizeIndex),
+          fontFamily: _settingsController.bodyFontFamily,
+        ),
+      ),
       themeMode: _themeMode,
       // 语言放在 builder 里而不是包住 MaterialApp：
       // MaterialApp 内部会新建 Navigator/Overlay，弹窗属于那一层；
       // 只有放进 builder 才能让弹窗里的 context.tr 也取得到。
-      builder: (context, child) => L10nScope(
-        locale: AppLocale.fromId(_settingsController.localeId),
-        child: child ?? const SizedBox.shrink(),
-      ),
+      //
+      // 同时把当前语言写进全局镜像，供拿不到 context 的地方（State 辅助
+      // 方法、纯函数、模型 getter）通过 T() 取词。
+      builder: (context, child) {
+        final loc = AppLocale.fromId(_settingsController.localeId);
+        setCurrentAppLocale(loc);
+        return L10nScope(
+          locale: loc,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: notes == null || ai == null
           // 笔记库打开前的极短占位。用空白而不是转圈，
           // 避免一闪而过的加载动画更刺眼。

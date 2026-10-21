@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/ai_controller.dart';
@@ -10,6 +11,7 @@ import '../../core/settings/settings_controller.dart';
 /// 作用说明不是从 schema 里自动抽的——schema 的描述是写给模型看的
 /// （强调「什么时候该调」），而用户想知道的是「这个东西会动我的文件吗」。
 /// 两种话术目的不同，混用会让人不敢关也看不懂。
+/// label/desc 存**中文原文**，显示时用 `context.tr()` 翻译。
 const List<({String name, String label, String desc, bool risky})>
 kToolCatalog = [
   (name: 'list_notes', label: '列出想法', desc: '读取你的想法列表，可筛选', risky: false),
@@ -63,7 +65,7 @@ class _ToolTogglesSheetState extends State<ToolTogglesSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '工具开关',
+                  context.tr(T('工具开关')),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -72,7 +74,7 @@ class _ToolTogglesSheetState extends State<ToolTogglesSheet> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '关掉后模型完全看不到这个工具，不会调用也不会浪费一轮请求',
+                  context.tr(T('关掉后模型完全看不到这个工具，不会调用也不会浪费一轮请求')),
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
                 const SizedBox(height: 10),
@@ -95,7 +97,7 @@ class _ToolTogglesSheetState extends State<ToolTogglesSheet> {
                           title: Row(
                             children: [
                               Text(
-                                t.label,
+                                context.tr(t.label),
                                 style: const TextStyle(fontSize: 13),
                               ),
                               if (t.risky) ...[
@@ -110,7 +112,7 @@ class _ToolTogglesSheetState extends State<ToolTogglesSheet> {
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    '会动数据',
+                                    context.tr(T('会动数据')),
                                     style: TextStyle(
                                       fontSize: 9,
                                       color: c.warning,
@@ -121,7 +123,7 @@ class _ToolTogglesSheetState extends State<ToolTogglesSheet> {
                             ],
                           ),
                           subtitle: Text(
-                            t.desc,
+                            context.tr(t.desc),
                             style: TextStyle(
                               fontSize: 11,
                               color: c.textTertiary,
@@ -160,10 +162,10 @@ class _SkillsPageState extends State<SkillsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Skill / 工作模式'),
+        title: Text(context.tr(T('Skill / 工作模式'))),
         actions: [
           IconButton(
-            tooltip: '新建',
+            tooltip: context.tr(T('新建')),
             icon: const Icon(Icons.add),
             onPressed: () => _edit(),
           ),
@@ -175,8 +177,7 @@ class _SkillsPageState extends State<SkillsPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '启用后会追加到 System Prompt，规定这一轮「怎么做」。'
-              '可以同时开多个，也能随时关掉。',
+              T('启用后会追加到 System Prompt，规定这一轮「怎么做」。可以同时开多个，也能随时关掉。'),
               style: TextStyle(
                 fontSize: 11,
                 color: c.textTertiary,
@@ -208,7 +209,7 @@ class _SkillsPageState extends State<SkillsPage> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        '内置',
+                        context.tr(T('内置')),
                         style: TextStyle(fontSize: 9, color: c.textTertiary),
                       ),
                     ),
@@ -228,7 +229,7 @@ class _SkillsPageState extends State<SkillsPage> {
                 children: [
                   if (!s.builtin)
                     IconButton(
-                      tooltip: '编辑',
+                      tooltip: context.tr(T('编辑')),
                       icon: Icon(
                         Icons.edit_outlined,
                         size: 18,
@@ -269,7 +270,7 @@ class _SkillsPageState extends State<SkillsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: Text(skill == null ? '新建 Skill' : '编辑 Skill'),
+        title: Text(skill == null ? T('新建 Skill') : T('编辑 Skill')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -277,17 +278,17 @@ class _SkillsPageState extends State<SkillsPage> {
               TextField(
                 controller: nameCtrl,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '名称',
-                  hintText: '例如：改成口语化',
+                decoration: InputDecoration(
+                  labelText: context.tr(T('名称')),
+                  hintText: context.tr(T('例如：改成口语化')),
                   isDense: true,
                 ),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: descCtrl,
-                decoration: const InputDecoration(
-                  labelText: '一句话说明（可选）',
+                decoration: InputDecoration(
+                  labelText: context.tr(T('一句话说明（可选）')),
                   isDense: true,
                 ),
               ),
@@ -297,10 +298,8 @@ class _SkillsPageState extends State<SkillsPage> {
                 maxLines: 8,
                 minLines: 4,
                 decoration: InputDecoration(
-                  labelText: '指令内容',
-                  hintText:
-                      '写给模型看的要求，越具体越好。\n'
-                      '建议同时写清「不要做什么」。',
+                  labelText: context.tr(T('指令内容')),
+                  hintText: context.tr(T('写给模型看的要求，越具体越好。\n建议同时写清「不要做什么」。')),
                   isDense: true,
                   hintStyle: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
@@ -312,11 +311,11 @@ class _SkillsPageState extends State<SkillsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(true),
-            child: const Text('保存'),
+            child: Text(context.tr(T('保存'))),
           ),
         ],
       ),
@@ -327,7 +326,7 @@ class _SkillsPageState extends State<SkillsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('名称和指令内容不能为空')));
+      ).showSnackBar(SnackBar(content: Text(context.tr(T('名称和指令内容不能为空')))));
       return;
     }
 
@@ -354,16 +353,16 @@ class _SkillsPageState extends State<SkillsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('删除这个 Skill？'),
-        content: Text('「$name」将被删除。'),
+        title: Text(context.tr(T('删除这个 Skill？'))),
+        content: Text(TP('「{}」将被删除。', [name])),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(false),
-            child: const Text('取消'),
+            child: Text(context.tr(T('取消'))),
           ),
           TextButton(
             onPressed: () => Navigator.of(dctx).pop(true),
-            child: const Text('删除'),
+            child: Text(context.tr(T('删除'))),
           ),
         ],
       ),

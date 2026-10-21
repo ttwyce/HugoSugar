@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugosugar/app/i18n/l10n_scope.dart';
 
 import '../../app/theme/app_colors.dart';
 
@@ -18,11 +19,7 @@ import '../../app/theme/app_colors.dart';
 /// 生成中，正文还没出来，屏幕上如果一片空白，用户会怀疑是不是卡住了。
 /// 这时思考过程正好充当「正在工作」的证据。等正文开始输出再自动收起。
 class ThinkingBlock extends StatefulWidget {
-  const ThinkingBlock({
-    super.key,
-    required this.text,
-    this.streaming = false,
-  });
+  const ThinkingBlock({super.key, required this.text, this.streaming = false});
 
   /// 思考内容。空串时不渲染任何东西。
   final String text;
@@ -86,7 +83,7 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
-                        widget.streaming ? '正在思考…' : '思考过程',
+                        widget.streaming ? T('正在思考…') : T('思考过程'),
                         style: TextStyle(
                           fontSize: 11,
                           color: widget.streaming ? c.accent : c.textTertiary,
@@ -94,7 +91,7 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                       ),
                     ),
                     Text(
-                      '${widget.text.characters.length} 字',
+                      TP('{} 字', [widget.text.characters.length]),
                       style: TextStyle(fontSize: 10, color: c.textTertiary),
                     ),
                     const SizedBox(width: 4),

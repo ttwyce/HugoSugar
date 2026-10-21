@@ -80,6 +80,8 @@ class AppSettings {
     this.skillIds = const [],
     this.accentPreset = 0,
     this.localeId = 'zh',
+    this.bodySizeIndex = 2,
+    this.bodyFontFamily = '',
   });
 
   final DateFormatStyle dateFormat;
@@ -165,6 +167,19 @@ class AppSettings {
   /// 不应依赖 app/i18n 层。转换在 controller 里做。
   final String localeId;
 
+  /// 正文字号档位（0..4，对应 15/16/17/18/20）。
+  ///
+  /// 存档位索引而不是字号值：与 accentPreset 同理，
+  /// 以后微调各档具体数值时所有老用户能一起跟上，
+  /// 也不用担心用户在旧版本存了个离谱的数字。
+  final int bodySizeIndex;
+
+  /// 正文字体族名。空串表示「跟随系统」（不指定 fontFamily）。
+  ///
+  /// 只影响编辑器 / 预览正文，不改界面其它文字 ——
+  /// 界面字体混搭会很难看，用户想要的通常是「读书时字舒服」。
+  final String bodyFontFamily;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
@@ -180,6 +195,8 @@ class AppSettings {
     List<String>? skillIds,
     int? accentPreset,
     String? localeId,
+    int? bodySizeIndex,
+    String? bodyFontFamily,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
@@ -196,6 +213,8 @@ class AppSettings {
       skillIds: skillIds ?? this.skillIds,
       accentPreset: accentPreset ?? this.accentPreset,
       localeId: localeId ?? this.localeId,
+      bodySizeIndex: bodySizeIndex ?? this.bodySizeIndex,
+      bodyFontFamily: bodyFontFamily ?? this.bodyFontFamily,
     );
   }
 
@@ -214,6 +233,8 @@ class AppSettings {
     'skillIds': skillIds,
     'accentPreset': accentPreset,
     'localeId': localeId,
+    'bodySizeIndex': bodySizeIndex,
+    'bodyFontFamily': bodyFontFamily,
   };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -238,6 +259,8 @@ class AppSettings {
     skillIds: (j['skillIds'] as List?)?.cast<String>() ?? const [],
     accentPreset: ((j['accentPreset'] as num?)?.toInt() ?? 0).clamp(0, 20),
     localeId: j['localeId'] as String? ?? 'zh',
+    bodySizeIndex: ((j['bodySizeIndex'] as num?)?.toInt() ?? 2).clamp(0, 4),
+    bodyFontFamily: j['bodyFontFamily'] as String? ?? '',
   );
 }
 
