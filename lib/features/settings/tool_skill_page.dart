@@ -15,6 +15,7 @@ kToolCatalog = [
   (name: 'list_notes', label: '列出想法', desc: '读取你的想法列表，可筛选', risky: false),
   (name: 'read_note', label: '读取想法', desc: '读某一条想法的完整内容', risky: false),
   (name: 'search_notes', label: '搜索想法', desc: '在所有想法里全文搜索', risky: false),
+  (name: 'save_note', label: '写入想法', desc: '把资料/灵感新建为一条想法', risky: true),
   (name: 'read_post', label: '读取文章', desc: '读站点里已有文章的全文', risky: false),
   (name: 'write_post', label: '写入文章', desc: '往站点写文件（需你确认 Diff）', risky: true),
   (name: 'fetch_url', label: '抓取网页', desc: '联网读取指定网址的正文', risky: true),

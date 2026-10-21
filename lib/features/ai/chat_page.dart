@@ -1179,6 +1179,7 @@ class _ToolStripState extends State<_ToolStrip> {
   IconData get _icon => switch (widget.record.name) {
     'list_notes' || 'search_notes' => Icons.lightbulb_outline,
     'read_note' => Icons.sticky_note_2_outlined,
+    'save_note' => Icons.note_add_outlined,
     'read_post' => Icons.description_outlined,
     'write_post' => Icons.edit_note,
     'fetch_url' => Icons.link,
@@ -1341,6 +1342,7 @@ class _StreamingBubble extends StatelessWidget {
     'list_notes' => '正在列出想法…',
     'read_note' => '正在读取想法…',
     'search_notes' => '正在搜索想法…',
+    'save_note' => '正在保存想法…',
     'read_post' => '正在读取文章…',
     'write_post' => '准备写入文章…',
     'fetch_url' => '正在抓取网页…',

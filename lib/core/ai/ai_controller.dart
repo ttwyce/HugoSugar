@@ -1204,6 +1204,17 @@ class AiController extends ChangeNotifier {
             )
             .toList();
       },
+      // 「写入想法」。
+      //
+      // 与读取不同，**写入不受 _readNotes 开关限制**：
+      // _readNotes 管的是「AI 能不能看到你的想法」，而用户主动要求
+      // 「把这段存进想法里」是明确意图，不该因为读开关关着就失败。
+      // 笔记库没就绪（nc == null）时返回 null，工具会回一句「不可用」。
+      createNote: ({required title, required content, required pinned}) async {
+        final c = nc;
+        if (c == null) return null;
+        return c.createNote(title: title, content: content, pinned: pinned);
+      },
       listPosts: () => posts
           // 必须给**相对 content 目录**的路径。
           //

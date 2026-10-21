@@ -48,10 +48,22 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   @override
   void initState() {
     super.initState();
+    // ★ 语言切换必须让**顶层**重建，否则 L10nScope 里的 locale 一直是旧值。
+    //
+    // L10nScope 挂在 MaterialApp.builder 里，它的 locale 是构建时读取
+    // _settingsController.localeId 的快照。SettingsController.notifyListeners()
+    // 只会通知**订阅者**；本 State 之前从未 addListener，所以切语言时
+    // 只有设置页自己 setState，顶层不重建 → L10nScope 拿到旧 locale →
+    // 界面看起来「没反应」，必须重启才生效。这里补上订阅。
+    _settingsController.addListener(_onSettingsChanged);
     // 异步恢复上次接入的站点，不阻塞首帧
     _siteController.load();
     _initSettings();
     _initNotes();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   /// 偏好设置要在站点读取配置之前尽量就位，但它影响的是「写文件」，
@@ -88,6 +100,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
 
   @override
   void dispose() {
+    _settingsController.removeListener(_onSettingsChanged);
     _aiController?.dispose();
     _noteController?.dispose();
     _siteController.dispose();
@@ -107,10 +120,8 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
     return MaterialApp(
       title: 'HugoSugar',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(
-          accentIndex: _settingsController.accentPreset),
-      darkTheme: AppTheme.dark(
-          accentIndex: _settingsController.accentPreset),
+      theme: AppTheme.light(accentIndex: _settingsController.accentPreset),
+      darkTheme: AppTheme.dark(accentIndex: _settingsController.accentPreset),
       themeMode: _themeMode,
       // 语言放在 builder 里而不是包住 MaterialApp：
       // MaterialApp 内部会新建 Navigator/Overlay，弹窗属于那一层；

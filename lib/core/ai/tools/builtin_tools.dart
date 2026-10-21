@@ -170,6 +170,7 @@ class ToolRegistry {
     required this.listNotes,
     required this.readNote,
     required this.searchNotes,
+    required this.createNote,
     required this.listPosts,
     required this.readPost,
     required this.writePost,
@@ -185,6 +186,18 @@ class ToolRegistry {
 
   /// 供未来扩展；当前用 listNotes 做关键词过滤
   final List<Note> Function(String keyword) searchNotes;
+
+  /// 新建一条想法。返回 null 表示笔记库不可用。
+  ///
+  /// 只做「新增」，**不覆盖已有想法** —— 用户明确要的是把搜到的资料
+  /// 存进想法里，不是让 AI 改写他已有的笔记。改写属于更高风险的操作，
+  /// 真要支持得单独给一个带 Diff 审批的 update_note 工具。
+  final Future<Note?> Function({
+    required String title,
+    required String content,
+    required bool pinned,
+  })
+  createNote;
 
   /// 列出站点内文章（相对路径 + 标题）
   final List<({String path, String title})> Function() listPosts;
@@ -252,6 +265,25 @@ class ToolRegistry {
           required: ['keyword'],
         ),
         execute: _execSearchNotes,
+      ),
+      AiTool(
+        name: 'save_note',
+        description:
+            '新建一条想法（笔记），把用户在网上搜到的资料、灵感、摘录存进去。'
+            '用户说「记一下」「存到想法里」「把这段收藏起来」时用这个。'
+            '只新增，不会修改或覆盖已有想法。'
+            '标题要能概括内容，正文用 Markdown 保留原始信息'
+            '（来源链接、关键段落、你的简短整理）。'
+            '如果用户没说标题，就根据内容起一个简短的。',
+        parameters: objectSchema(
+          properties: {
+            'title': stringProp('想法标题，简短概括，如「Flutter 状态管理对比」'),
+            'content': stringProp('Markdown 正文，保留来源链接与关键内容'),
+            'pinned': boolProp('是否置顶。用户强调重要、或后续要反复参考时设为 true'),
+          },
+          required: ['title', 'content'],
+        ),
+        execute: _execSaveNote,
       ),
       AiTool(
         name: 'read_post',
@@ -422,6 +454,33 @@ class ToolRegistry {
       ok: true,
       text: body.toString(),
       detail: '读取想法「${n.title}」',
+    );
+  }
+
+  Future<ToolResult> _execSaveNote(Map<String, dynamic> args) async {
+    final title = (args['title'] as String? ?? '').trim();
+    final content = (args['content'] as String? ?? '').trim();
+    final pinned = args['pinned'] as bool? ?? false;
+    if (content.isEmpty) return ToolResult.fail('内容为空');
+    // 标题可为空（用户没给），但空标题的想法在列表里很难认，
+    // 用正文首行兜底，比留空强。
+    final effectiveTitle = title.isEmpty
+        ? content.split('\n').first.replaceAll(RegExp(r'^#+\s*'), '').trim()
+        : title;
+    final note = await createNote(
+      title: effectiveTitle,
+      content: content,
+      pinned: pinned,
+    );
+    if (note == null) {
+      return ToolResult.fail('想法库当前不可用，无法保存');
+    }
+    return ToolResult(
+      ok: true,
+      text:
+          '已保存想法「${note.title}」(id: ${note.id})'
+          '${pinned ? '，并已置顶' : ''}',
+      detail: '保存想法「${note.title}」',
     );
   }
 

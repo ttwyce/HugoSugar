@@ -2,11 +2,7 @@ import 'dart:convert';
 
 /// 工具执行结果。
 class ToolResult {
-  const ToolResult({
-    required this.ok,
-    this.text = '',
-    this.detail = '',
-  });
+  const ToolResult({required this.ok, this.text = '', this.detail = ''});
 
   final bool ok;
 
@@ -18,7 +14,8 @@ class ToolResult {
 
   Map<String, dynamic> toJson() => {'ok': ok, 'text': text, 'detail': detail};
 
-  static ToolResult fail(String msg) => ToolResult(ok: false, text: msg, detail: msg);
+  static ToolResult fail(String msg) =>
+      ToolResult(ok: false, text: msg, detail: msg);
 }
 
 /// 一个可供模型调用的工具。
@@ -46,13 +43,13 @@ class AiTool {
 
   /// 转成 OpenAI tools 数组里的一项
   Map<String, dynamic> toApiJson() => {
-        'type': 'function',
-        'function': {
-          'name': name,
-          'description': description,
-          'parameters': parameters,
-        },
-      };
+    'type': 'function',
+    'function': {
+      'name': name,
+      'description': description,
+      'parameters': parameters,
+    },
+  };
 }
 
 /// 便捷构造 JSON Schema
@@ -60,23 +57,22 @@ Map<String, dynamic> objectSchema({
   required Map<String, dynamic> properties,
   List<String> required = const [],
 }) {
-  return {
-    'type': 'object',
-    'properties': properties,
-    'required': required,
-  };
+  return {'type': 'object', 'properties': properties, 'required': required};
 }
 
 Map<String, dynamic> stringProp(String desc, {List<String>? enumValues}) {
-  return {
-    'type': 'string',
-    'description': desc,
-    'enum': ?enumValues,
-  };
+  return {'type': 'string', 'description': desc, 'enum': ?enumValues};
 }
 
-Map<String, dynamic> intProp(String desc) =>
-    {'type': 'integer', 'description': desc};
+Map<String, dynamic> intProp(String desc) => {
+  'type': 'integer',
+  'description': desc,
+};
+
+Map<String, dynamic> boolProp(String desc) => {
+  'type': 'boolean',
+  'description': desc,
+};
 
 /// 把任意对象转成紧凑、可截断的观察文本，用于回灌给模型。
 String previewForTool(Object? v, {int max = 400}) {
