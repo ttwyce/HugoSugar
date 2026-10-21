@@ -38,8 +38,10 @@ enum DateFormatStyle {
 enum FileNameStyle {
   /// 与标题一致：把标题转成 slug（中文标题用时间戳兜底）
   fromTitle('跟随标题（推荐）'),
+
   /// 固定用时间戳：post-20240501-080309
   timestamp('时间戳'),
+
   /// 日期 + 标题 slug：20240501-hello
   dateAndTitle('日期 + 标题');
 
@@ -74,6 +76,9 @@ class AppSettings {
     this.aiMaxTokensPerRound = 120000,
     this.aiCompressThreshold = 20,
     this.aiKeepRecent = 8,
+    this.aiDisabledTools = const [],
+    this.skillIds = const [],
+    this.accentPreset = 0,
   });
 
   final DateFormatStyle dateFormat;
@@ -137,6 +142,22 @@ class AppSettings {
   /// 但保留的比阈值还多，压缩完反而更长（见 ContextCompressor 的注释）。
   final int aiKeepRecent;
 
+  /// 被关掉的工具名。
+  ///
+  /// 为什么存「关掉的」而不是「开启的」：
+  /// 工具会增加（以后可能再加新工具），存黑名单时新增的工具默认可用；
+  /// 存白名单的话，升级后新工具会默认被关，用户会以为「功能坏了」。
+  final List<String> aiDisabledTools;
+
+  /// 启用的 Skill id。空表示不套用任何 Skill。
+  final List<String> skillIds;
+
+  /// 主题强调色预设索引。索引对应 [kAccentPresets]。
+  ///
+  /// 存索引而不是颜色值：颜色值变了时（比如调整饱和度）老用户
+  /// 能自动跟上；而且预设有亮/暗两套值，单存一个 Color 无法表达。
+  final int accentPreset;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
@@ -148,6 +169,9 @@ class AppSettings {
     int? aiMaxTokensPerRound,
     int? aiCompressThreshold,
     int? aiKeepRecent,
+    List<String>? aiDisabledTools,
+    List<String>? skillIds,
+    int? accentPreset,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
@@ -160,42 +184,50 @@ class AppSettings {
       aiMaxTokensPerRound: aiMaxTokensPerRound ?? this.aiMaxTokensPerRound,
       aiCompressThreshold: aiCompressThreshold ?? this.aiCompressThreshold,
       aiKeepRecent: aiKeepRecent ?? this.aiKeepRecent,
+      aiDisabledTools: aiDisabledTools ?? this.aiDisabledTools,
+      skillIds: skillIds ?? this.skillIds,
+      accentPreset: accentPreset ?? this.accentPreset,
     );
   }
 
   Map<String, Object?> toJson() => {
-        'dateFormat': dateFormat.id,
-        'fileNameStyle': fileNameStyle.id,
-        'authorName': authorName,
-        'authorEmail': authorEmail,
-        'aiReadNotes': aiReadNotes,
-        'aiNoteCategoryIds': aiNoteCategoryIds,
-        'aiSystemPrompt': aiSystemPrompt,
-        'aiMaxTokensPerRound': aiMaxTokensPerRound,
-        'aiCompressThreshold': aiCompressThreshold,
-        'aiKeepRecent': aiKeepRecent,
-      };
+    'dateFormat': dateFormat.id,
+    'fileNameStyle': fileNameStyle.id,
+    'authorName': authorName,
+    'authorEmail': authorEmail,
+    'aiReadNotes': aiReadNotes,
+    'aiNoteCategoryIds': aiNoteCategoryIds,
+    'aiSystemPrompt': aiSystemPrompt,
+    'aiMaxTokensPerRound': aiMaxTokensPerRound,
+    'aiCompressThreshold': aiCompressThreshold,
+    'aiKeepRecent': aiKeepRecent,
+    'aiDisabledTools': aiDisabledTools,
+    'skillIds': skillIds,
+    'accentPreset': accentPreset,
+  };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
-        dateFormat: DateFormatStyle.fromId(j['dateFormat'] as String?),
-        fileNameStyle: FileNameStyle.fromId(j['fileNameStyle'] as String?),
-        authorName: j['authorName'] as String? ?? '',
-        authorEmail: j['authorEmail'] as String? ?? '',
-        aiReadNotes: j['aiReadNotes'] as bool? ?? false,
-        aiNoteCategoryIds:
-            (j['aiNoteCategoryIds'] as List?)?.cast<String>() ?? const [],
-        aiSystemPrompt: j['aiSystemPrompt'] as String? ?? '',
-        // 旧版本文件里没有这个字段，回落到默认值而不是 0 ——
-        // 0 会让第一轮请求立刻判定「超限」
-        aiMaxTokensPerRound:
-            (j['aiMaxTokensPerRound'] as num?)?.toInt() ?? 120000,
-        // 下限保护：0 会让「压缩」在同一轮里反复触发，
-        // 1 会让最近消息只留一条，等于把上下文全折叠掉
-        aiCompressThreshold:
-            ((j['aiCompressThreshold'] as num?)?.toInt() ?? 20).clamp(4, 200),
-        aiKeepRecent:
-            ((j['aiKeepRecent'] as num?)?.toInt() ?? 8).clamp(2, 100),
-      );
+    dateFormat: DateFormatStyle.fromId(j['dateFormat'] as String?),
+    fileNameStyle: FileNameStyle.fromId(j['fileNameStyle'] as String?),
+    authorName: j['authorName'] as String? ?? '',
+    authorEmail: j['authorEmail'] as String? ?? '',
+    aiReadNotes: j['aiReadNotes'] as bool? ?? false,
+    aiNoteCategoryIds:
+        (j['aiNoteCategoryIds'] as List?)?.cast<String>() ?? const [],
+    aiSystemPrompt: j['aiSystemPrompt'] as String? ?? '',
+    // 旧版本文件里没有这个字段，回落到默认值而不是 0 ——
+    // 0 会让第一轮请求立刻判定「超限」
+    aiMaxTokensPerRound: (j['aiMaxTokensPerRound'] as num?)?.toInt() ?? 120000,
+    // 下限保护：0 会让「压缩」在同一轮里反复触发，
+    // 1 会让最近消息只留一条，等于把上下文全折叠掉
+    aiCompressThreshold: ((j['aiCompressThreshold'] as num?)?.toInt() ?? 20)
+        .clamp(4, 200),
+    aiKeepRecent: ((j['aiKeepRecent'] as num?)?.toInt() ?? 8).clamp(2, 100),
+    aiDisabledTools:
+        (j['aiDisabledTools'] as List?)?.cast<String>() ?? const [],
+    skillIds: (j['skillIds'] as List?)?.cast<String>() ?? const [],
+    accentPreset: ((j['accentPreset'] as num?)?.toInt() ?? 0).clamp(0, 20),
+  );
 }
 
 /// 只读的偏好设置视图。
@@ -213,6 +245,9 @@ abstract class SettingsControllerLike {
   int get aiMaxTokensPerRound;
   int get aiCompressThreshold;
   int get aiKeepRecent;
+  List<String> get aiDisabledTools;
+  List<String> get skillIds;
+  int get accentPreset;
 }
 
 /// 读写 `settings.json`。

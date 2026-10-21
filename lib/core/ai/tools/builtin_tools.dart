@@ -51,8 +51,10 @@ class UrlFetcher {
       http.StreamedResponse res;
       try {
         res = await _client
-            .send(http.Request('GET', current)..headers['User-Agent'] =
-                'HugoSugar/1.0 (+https://github.com)')
+            .send(
+              http.Request('GET', current)
+                ..headers['User-Agent'] = 'HugoSugar/1.0 (+https://github.com)',
+            )
             .timeout(timeout);
       } on TimeoutException {
         throw FetchError('请求超时（15 秒）');
@@ -93,7 +95,8 @@ class UrlFetcher {
       }
 
       final body = PageDecoder.decode(bytes, contentType: contentType);
-      final isHtml = contentType.contains('html') ||
+      final isHtml =
+          contentType.contains('html') ||
           body.trimLeft().toLowerCase().startsWith('<!doctype') ||
           body.trimLeft().toLowerCase().startsWith('<html');
 
@@ -173,6 +176,7 @@ class ToolRegistry {
     required this.contentDirAbs,
     this.fetcher,
     this.memoryStore,
+    this.disabledTools = const [],
   });
 
   /// 提供当前可读的想法（已排除回收站）
@@ -198,14 +202,28 @@ class ToolRegistry {
   /// 比注册了再返回「功能未启用」更干净：模型看不到工具就不会去试。
   final MemoryStore? memoryStore;
 
+  /// 被用户关掉的工具名。
+  ///
+  /// 这些工具不会出现在 schema 里。用名字而不是索引，
+  /// 因为工具列表会变化，索引会错位。
+  final List<String> disabledTools;
+
   /// 网页缓存：同 URL 24h 复用，避免多轮对话反复抓同一页
   final Map<String, _CachedPage> _cache = {};
 
   List<AiTool> build() {
+    final all = _buildAll();
+    if (disabledTools.isEmpty) return all;
+    final off = disabledTools.toSet();
+    return all.where((t) => !off.contains(t.name)).toList();
+  }
+
+  List<AiTool> _buildAll() {
     return [
       AiTool(
         name: 'list_notes',
-        description: '列出用户的想法（笔记）。可用分类或关键词过滤，'
+        description:
+            '列出用户的想法（笔记）。可用分类或关键词过滤，'
             '返回 id、标题和内容摘要。想了解用户有什么素材时先调这个。',
         parameters: objectSchema(
           properties: {
@@ -226,7 +244,8 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'search_notes',
-        description: '在所有想法里做关键词全文搜索，返回命中的想法和上下文片段。'
+        description:
+            '在所有想法里做关键词全文搜索，返回命中的想法和上下文片段。'
             '需要找具体素材、术语、过往记录时用。',
         parameters: objectSchema(
           properties: {'keyword': stringProp('要搜索的关键词')},
@@ -236,7 +255,8 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'read_post',
-        description: '读取站点里已有文章的完整内容（含 Front Matter）。'
+        description:
+            '读取站点里已有文章的完整内容（含 Front Matter）。'
             '写新文章前先看几篇，能学到用户的格式和文风。',
         parameters: objectSchema(
           properties: {
@@ -248,11 +268,14 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'write_post',
-        description: '把文章写入站点。会先让用户看到 Diff 并确认，'
+        description:
+            '把文章写入站点。会先让用户看到 Diff 并确认，'
             '用户确认后才真正落盘。内容必须包含完整的 Front Matter。',
         parameters: objectSchema(
           properties: {
-            'path': stringProp('相对 content 目录的路径，如 posts/my-post.md，必须以 .md 结尾'),
+            'path': stringProp(
+              '相对 content 目录的路径，如 posts/my-post.md，必须以 .md 结尾',
+            ),
             'content': stringProp('完整的文件内容，含 Front Matter 和正文'),
           },
           required: ['path', 'content'],
@@ -262,7 +285,8 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'fetch_url',
-        description: '抓取一个网页的正文并转成纯文本。'
+        description:
+            '抓取一个网页的正文并转成纯文本。'
             '仅在用户明确给出网址、或需要查证具体文档时使用。'
             '不要主动联网搜索，不要连续抓取同一网站的多个页面。',
         parameters: objectSchema(
@@ -276,7 +300,6 @@ class ToolRegistry {
     ];
   }
 
-
   /// 3 个记忆工具的声明。
   ///
   /// 共同设计要点都在描述里，因为描述就是提示词：
@@ -285,7 +308,8 @@ class ToolRegistry {
     return [
       AiTool(
         name: 'save_memory',
-        description: '把关于用户的长期事实存入记忆库。'
+        description:
+            '把关于用户的长期事实存入记忆库。'
             '值得记：写作风格（句式长短、用词偏好、结构习惯）、'
             '性格与喜好（在意什么、反感什么）、'
             '工作习惯（技术栈、常用工具、流程偏好）。'
@@ -301,7 +325,8 @@ class ToolRegistry {
           properties: {
             'content': stringProp('一句话事实，如「用户写技术博客，偏好先给结论再展开」'),
             'category': stringProp(
-                '分类：style(写作风格) / persona(性格喜好) / workflow(工作习惯) / other'),
+              '分类：style(写作风格) / persona(性格喜好) / workflow(工作习惯) / other',
+            ),
           },
           required: ['content', 'category'],
         ),
@@ -309,7 +334,8 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'update_memory',
-        description: '改写一条已有的记忆（合并重复、纠正过时信息）。'
+        description:
+            '改写一条已有的记忆（合并重复、纠正过时信息）。'
             '用 save_memory 返回的 id，或工具提示的相近条目 id。',
         parameters: objectSchema(
           properties: {
@@ -323,7 +349,8 @@ class ToolRegistry {
       ),
       AiTool(
         name: 'delete_memory',
-        description: '删除一条记忆。仅当用户明确要求「忘掉这件事」，'
+        description:
+            '删除一条记忆。仅当用户明确要求「忘掉这件事」，'
             '或该记忆确实错误时才用。不要自作主张清理。',
         parameters: objectSchema(
           properties: {'id': stringProp('要删除的记忆 id')},
@@ -345,9 +372,11 @@ class ToolRegistry {
     if (keyword.isNotEmpty) {
       final k = keyword.toLowerCase();
       notes = notes
-          .where((n) =>
-              n.title.toLowerCase().contains(k) ||
-              n.content.toLowerCase().contains(k))
+          .where(
+            (n) =>
+                n.title.toLowerCase().contains(k) ||
+                n.content.toLowerCase().contains(k),
+          )
           .toList();
     }
 
@@ -359,8 +388,9 @@ class ToolRegistry {
     final buf = StringBuffer();
     for (final n in shown) {
       final summary = n.content.replaceAll('\n', ' ').trim();
-      final snippet =
-          summary.length > 80 ? '${summary.substring(0, 80)}…' : summary;
+      final snippet = summary.length > 80
+          ? '${summary.substring(0, 80)}…'
+          : summary;
       buf.writeln('- id: ${n.id}');
       buf.writeln('  标题: ${n.title.isEmpty ? '（无标题）' : n.title}');
       buf.writeln('  摘要: $snippet');
@@ -469,10 +499,7 @@ class ToolRegistry {
     final path = (args['path'] as String? ?? '').trim();
     final content = args['content'] as String? ?? '';
 
-    final deny = validatePostPath(
-      contentDirAbs: contentDirAbs,
-      relPath: path,
-    );
+    final deny = validatePostPath(contentDirAbs: contentDirAbs, relPath: path);
     if (deny != null) return ToolResult.fail(deny);
     if (content.trim().isEmpty) return ToolResult.fail('内容为空');
 
@@ -494,11 +521,7 @@ class ToolRegistry {
     // 缓存 24h
     final cached = _cache[url];
     if (cached != null && !cached.isStale) {
-      return ToolResult(
-        ok: true,
-        text: cached.text,
-        detail: '读取网页（缓存）$url',
-      );
+      return ToolResult(ok: true, text: cached.text, detail: '读取网页（缓存）$url');
     }
 
     try {
@@ -535,9 +558,27 @@ class ToolRegistry {
     if (similar != null) {
       return ToolResult(
         ok: false,
-        text: '已有相近的记忆（id: ${similar.id}）：${similar.content}\n'
+        text:
+            '已有相近的记忆（id: ${similar.id}）：${similar.content}\n'
             '如需补充或纠正，请调用 update_memory 改写它。',
         detail: '与已有记忆重复，未写入',
+      );
+    }
+
+    // 矛盾检测：已有一条「意思相反」的记忆。
+    //
+    // 不自动昵名合并也不静默覆盖：哪一条对，只有用户知道。
+    // 把冲突摆到模型面前，让它去问用户或改写旧条目。
+    final conflict = store.findConflict(content);
+    if (conflict != null) {
+      return ToolResult(
+        ok: false,
+        text:
+            '发现可能矛盾的已有记忆（id: ${conflict.id}）：${conflict.content}\n'
+            '这条与它意思相反。请先确认哪一个才是对的：'
+            '若新信息才对，用 update_memory 改写它；'
+            '若两者适用于不同情境，把语境写清楚后再保存。',
+        detail: '与已有记忆矛盾，未写入',
       );
     }
 
@@ -545,7 +586,8 @@ class ToolRegistry {
     if (added == null) {
       return ToolResult(
         ok: false,
-        text: '记忆库已满（${MemoryStore.maxCount} 条）。\n'
+        text:
+            '记忆库已满（${MemoryStore.maxCount} 条）。\n'
             '请先合并或删除价值最低的几条，再保存这条。',
         detail: '记忆库已满，未写入',
       );
@@ -575,11 +617,7 @@ class ToolRegistry {
     );
     if (!ok) return ToolResult.fail('找不到 id 为 $id 的记忆');
 
-    return ToolResult(
-      ok: true,
-      text: '已更新记忆 $id',
-      detail: '更新记忆：$content',
-    );
+    return ToolResult(ok: true, text: '已更新记忆 $id', detail: '更新记忆：$content');
   }
 
   Future<ToolResult> _execDeleteMemory(Map<String, dynamic> args) async {
@@ -592,13 +630,8 @@ class ToolRegistry {
     final ok = await store.remove(id);
     if (!ok) return ToolResult.fail('找不到 id 为 $id 的记忆');
 
-    return ToolResult(
-      ok: true,
-      text: '已删除记忆 $id',
-      detail: '删除一条记忆',
-    );
+    return ToolResult(ok: true, text: '已删除记忆 $id', detail: '删除一条记忆');
   }
-
 }
 
 class _CachedPage {

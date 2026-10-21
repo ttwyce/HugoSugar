@@ -105,8 +105,10 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
     return MaterialApp(
       title: 'HugoSugar',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(
+          accentIndex: _settingsController.accentPreset),
+      darkTheme: AppTheme.dark(
+          accentIndex: _settingsController.accentPreset),
       themeMode: _themeMode,
       home: notes == null || ai == null
           // 笔记库打开前的极短占位。用空白而不是转圈，
@@ -115,6 +117,7 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
           : AppShell(
               themeMode: _themeMode,
               onThemeModeChanged: _onThemeModeChanged,
+              onAccentChanged: () => setState(() {}),
               siteController: _siteController,
               noteController: notes,
               settingsController: _settingsController,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/accent_presets.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/ai_controller.dart';
 import '../../core/ai/default_prompt.dart';
@@ -11,6 +12,7 @@ import 'author_identity_dialog.dart';
 import 'author_suggestion.dart';
 import 'memory_page.dart';
 import 'token_dialog.dart';
+import 'tool_skill_page.dart';
 
 /// 设置页：标准 iOS 风格分组列表。
 class SettingsPage extends StatefulWidget {
@@ -21,7 +23,14 @@ class SettingsPage extends StatefulWidget {
     required this.siteController,
     required this.settingsController,
     required this.aiController,
+    this.onAccentChanged,
   });
+
+  /// 强调色改完后通知外层重建主题。
+  ///
+  /// 为什么要上报而不是这里自己 setState：
+  /// ThemeData 是 MaterialApp 的属性，只有它重建才能生效。
+  final VoidCallback? onAccentChanged;
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
@@ -156,6 +165,118 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() {});
   }
 
+  String _toolsSubtitle() {
+    final off = widget.settingsController.aiDisabledTools;
+    if (off.isEmpty) return '全部工具可用';
+    return '已关掉 ${off.length} 个（模型看不到它们）';
+  }
+
+  Future<void> _openToolToggles() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ToolTogglesSheet(
+        settingsController: widget.settingsController,
+        aiController: widget.aiController,
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  String _skillsSubtitle() {
+    final store = widget.aiController.skillStore;
+    final total = store?.all.length ?? 0;
+    final active = widget.aiController.skillIds.length;
+    if (total == 0) return '尚未加载';
+    if (active == 0) return '$total 个可用，当前未启用';
+    return '当前启用 $active 个 / 共 $total 个';
+  }
+
+  Future<void> _pickAccent() async {
+    final current = widget.settingsController.accentPreset;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '强调色',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '只改强调色，错误红和警告黄保持不变——它们的颜色本身就是语义。',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(bctx).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (var i = 0; i < kAccentPresets.length; i++)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () async {
+                        await widget.settingsController.setAccentPreset(i);
+                        widget.onAccentChanged?.call();
+                        if (bctx.mounted) Navigator.of(bctx).pop();
+                        if (mounted) setState(() {});
+                      },
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: kAccentPresets[i].accent(isDark),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: current == i
+                                    ? kAccentPresets[i].accent(isDark)
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                            child: current == i
+                                ? const Icon(Icons.check,
+                                    color: Colors.white, size: 20)
+                                : null,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            kAccentPresets[i].name,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openSkills() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SkillsPage(controller: widget.aiController),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   /// 编辑上下文压缩阈值。
   ///
   /// 两个数字必须一起改：保留条数 >= 阈值时，
@@ -198,8 +319,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.right,
                       controller: TextEditingController(text: '$keep'),
-                      onChanged: (v) => keep =
-                          (int.tryParse(v) ?? keep).clamp(2, 199),
+                      onChanged: (v) =>
+                          keep = (int.tryParse(v) ?? keep).clamp(2, 199),
                     ),
                   ),
                 ],
@@ -209,7 +330,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 '超过阈值后，较早的消息会被折叠成摘要，'
                 '最近几条原样保留。\n'
                 '下限 4 / 上限 200。保留数必须小于阈值。',
-                style: TextStyle(fontSize: 11, color: ctx.appColors.textTertiary),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: ctx.appColors.textTertiary,
+                ),
               ),
             ],
           ),
@@ -369,6 +493,16 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const IndentedDivider(),
           ListTile(
+            title: const Text('强调色'),
+            subtitle: Text(
+              accentPresetAt(widget.settingsController.accentPreset).name,
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _pickAccent,
+          ),
+          const IndentedDivider(),
+          ListTile(
             title: const Text('正文字体'),
             subtitle: const Text('系统黑体'),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -508,6 +642,29 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: _editMaxTokens,
           ),
 
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.handyman_outlined),
+            title: const Text('工具开关'),
+            subtitle: Text(
+              _toolsSubtitle(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _openToolToggles,
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.auto_fix_high),
+            title: const Text('Skill / 工作模式'),
+            subtitle: Text(
+              _skillsSubtitle(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _openSkills,
+          ),
+
           const SectionHeader('关于'),
           ListTile(
             title: const Text('版本'),
@@ -527,16 +684,17 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _fileNameHint(FileNameStyle s) => switch (s) {
-        FileNameStyle.fromTitle => '（如 hello-world.md）',
-        FileNameStyle.timestamp => '（如 post-20240501-080309.md）',
-        FileNameStyle.dateAndTitle => '（如 20240501-hello-world.md）',
-      };
+    FileNameStyle.fromTitle => '（如 hello-world.md）',
+    FileNameStyle.timestamp => '（如 post-20240501-080309.md）',
+    FileNameStyle.dateAndTitle => '（如 20240501-hello-world.md）',
+  };
 
   void _pickDateFormat(BuildContext context) {
     _showChoiceSheet<DateFormatStyle>(
       context: context,
       title: '日期格式',
-      note: '写入 Front Matter 的 date 字段。Hugo 三种都能解析，'
+      note:
+          '写入 Front Matter 的 date 字段。Hugo 三种都能解析，'
           '但如果主题或时间线功能要求严格 ISO8601，选带时区那种。',
       values: DateFormatStyle.values,
       current: widget.settingsController.dateFormat,
@@ -550,7 +708,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _showChoiceSheet<FileNameStyle>(
       context: context,
       title: '新建文件名',
-      note: '只影响以后新建的文章，已存在的文件不会改名。'
+      note:
+          '只影响以后新建的文章，已存在的文件不会改名。'
           '同名时自动加 -2、-3 后缀，绝不覆盖。',
       values: FileNameStyle.values,
       current: widget.settingsController.fileNameStyle,

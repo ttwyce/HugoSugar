@@ -23,6 +23,7 @@ class AppShell extends StatefulWidget {
     required this.noteController,
     required this.settingsController,
     required this.aiController,
+    this.onAccentChanged,
   });
 
   final ThemeMode themeMode;
@@ -31,6 +32,7 @@ class AppShell extends StatefulWidget {
   final NoteController noteController;
   final SettingsController settingsController;
   final AiController aiController;
+  final VoidCallback? onAccentChanged;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -79,6 +81,7 @@ class _AppShellState extends State<AppShell> {
             siteController: widget.siteController,
             settingsController: widget.settingsController,
             aiController: widget.aiController,
+            onAccentChanged: widget.onAccentChanged,
           ),
         ],
       ),

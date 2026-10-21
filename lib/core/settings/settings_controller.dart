@@ -1,13 +1,20 @@
 import 'package:flutter/foundation.dart';
 
-import 'app_settings.dart' show AppSettings, DateFormatStyle, FileNameStyle, SettingsControllerLike, SettingsStore;
+import 'app_settings.dart'
+    show
+        AppSettings,
+        DateFormatStyle,
+        FileNameStyle,
+        SettingsControllerLike,
+        SettingsStore;
 
 /// 偏好设置的全局持有者。
 ///
 /// 用 ChangeNotifier 而不是把 AppSettings 一路往下传：
 /// 日期格式和命名规则是在「写入文件」的那一刻才用到的，
 /// 而写文件发生在 SiteController / 各种弹窗里，硬传会把签名污染一大片。
-class SettingsController extends ChangeNotifier implements SettingsControllerLike {
+class SettingsController extends ChangeNotifier
+    implements SettingsControllerLike {
   SettingsController({SettingsStore? store}) : _store = store;
 
   SettingsStore? _store;
@@ -43,6 +50,20 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
 
   @override
   int get aiKeepRecent => _value.aiKeepRecent;
+  @override
+  List<String> get aiDisabledTools => _value.aiDisabledTools;
+  @override
+  List<String> get skillIds => _value.skillIds;
+  @override
+  int get accentPreset => _value.accentPreset;
+
+  Future<void> setAccentPreset(int index) async {
+    final v = index.clamp(0, 20);
+    if (_value.accentPreset == v) return;
+    _value = _value.copyWith(accentPreset: v);
+    notifyListeners();
+    await _store?.save(_value);
+  }
 
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
@@ -138,6 +159,35 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
     _value = _value.copyWith(aiKeepRecent: v);
     notifyListeners();
     await _store?.save(_value);
+  }
+
+  /// 开关一个工具。
+  ///
+  /// 关掉的工具会从模型的 schema 里移除，而不是「保留但拒绝」：
+  /// 保留 schema 会让模型先花一轮 token 去决定调用、再被拒，
+  /// 然后可能反复试—— 既浪费又让它困惑。
+  Future<void> setToolEnabled(String name, bool enabled) async {
+    final cur = _value.aiDisabledTools.toSet();
+    final changed = enabled ? cur.remove(name) : cur.add(name);
+    if (!changed) return;
+    _value = _value.copyWith(aiDisabledTools: cur.toList()..sort());
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  Future<void> setSkillIds(List<String> ids) async {
+    if (_listEquals(_value.skillIds, ids)) return;
+    _value = _value.copyWith(skillIds: List<String>.from(ids));
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Future<void> setAiMaxTokensPerRound(int tokens) async {

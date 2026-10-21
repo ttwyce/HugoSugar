@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+import 'accent_presets.dart';
 import 'app_colors.dart';
 
 /// 排版规范。编辑器正文单独暴露，因为它是「阅读偏好」可调的。
@@ -80,8 +81,45 @@ abstract final class AppTypography {
 
 /// 主题构建。亮暗两套都基于同一套 token，只换颜色。
 abstract final class AppTheme {
-  static ThemeData light() => _build(AppColors.light, Brightness.light);
-  static ThemeData dark() => _build(AppColors.dark, Brightness.dark);
+  static ThemeData light({int accentIndex = 0}) {
+    final p = accentPresetAt(accentIndex);
+    return _build(
+      _withAccent(AppColors.light, p.light, p.lightSoft),
+      Brightness.light,
+    );
+  }
+
+  static ThemeData dark({int accentIndex = 0}) {
+    final p = accentPresetAt(accentIndex);
+    return _build(
+      _withAccent(AppColors.dark, p.dark, p.darkSoft),
+      Brightness.dark,
+    );
+  }
+
+  /// 把强调色换成预设值。
+  ///
+  /// 只换 accent / accentSoft。不做全局 hue 旋转：那会把
+  /// danger（错误红）和 warning（警告黄）一起扭掉，而这两个颜色
+  /// 的语义（红=危险，黄=注意）是不能变的。
+  static AppColors _withAccent(
+    AppColors base,
+    Color accent,
+    Color accentSoft,
+  ) =>
+      AppColors(
+        background: base.background,
+        surface: base.surface,
+        surfaceHigh: base.surfaceHigh,
+        textPrimary: base.textPrimary,
+        textSecondary: base.textSecondary,
+        textTertiary: base.textTertiary,
+        divider: base.divider,
+        accent: accent,
+        accentSoft: accentSoft,
+        danger: base.danger,
+        warning: base.warning,
+      );
 
   static ThemeData _build(AppColors c, Brightness brightness) {
     final scheme = ColorScheme(

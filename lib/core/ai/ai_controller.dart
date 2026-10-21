@@ -17,6 +17,7 @@ import 'cancel_token.dart';
 import 'context_compressor.dart';
 import 'chat_store.dart';
 import 'memory_store.dart';
+import 'skill_store.dart';
 import 'default_prompt.dart';
 import 'note_context.dart';
 import 'tools/ai_tool.dart';
@@ -50,6 +51,9 @@ class AiController extends ChangeNotifier {
 
   /// 记忆库（关于用户的长期事实）
   MemoryStore? memoryStore;
+
+  /// Skill 库（工作模式模板）。
+  SkillStore? skillStore;
   UrlFetcher? _fetcher;
 
   // ── 状态 ────────────────────────────────────────────
@@ -94,6 +98,29 @@ class AiController extends ChangeNotifier {
   ///
   /// 默认 medium：多数任务的合理起点。
   ThinkingLevel _thinkingLevel = ThinkingLevel.medium;
+
+  /// 当前启用的 Skill id。
+  ///
+  /// 放在 controller 而不是 AppSettings，理由和思考档位一样：
+  /// 它的生命周期是「这段对话」。用户开着「翻译」跟它聊两句，
+  /// 然后开新对话写文章时，不应该还挂着翻译模式。
+  List<String> _skillIds = const [];
+  List<String> get skillIds => _skillIds;
+
+  set skillIds(List<String> ids) {
+    if (_sameList(_skillIds, ids)) return;
+    _skillIds = List<String>.from(ids);
+    notifyListeners();
+  }
+
+  static bool _sameList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   ThinkingLevel get thinkingLevel => _thinkingLevel;
 
   /// 切换档位。不打断正在进行的生成 ——
@@ -197,6 +224,8 @@ class AiController extends ChangeNotifier {
     final base = await getApplicationSupportDirectory();
     memoryStore = MemoryStore.at(Directory('${base.path}/ai'));
     await memoryStore!.load();
+    skillStore = SkillStore.at(Directory('${base.path}/ai'));
+    await skillStore!.load();
     _config = await _endpointStore!.load();
     _sessions = await _chatStore!.listAll();
     _groups = await _chatStore!.listGroups();
@@ -425,9 +454,8 @@ class AiController extends ChangeNotifier {
       _sessions.where((s) => !s.isArchived).toList();
 
   /// 某个分组下的活跃会话。
-  List<ChatSession> sessionsInGroup(String groupId) => _sessions
-      .where((s) => !s.isArchived && s.groupId == groupId)
-      .toList();
+  List<ChatSession> sessionsInGroup(String groupId) =>
+      _sessions.where((s) => !s.isArchived && s.groupId == groupId).toList();
 
   /// 未归组的活跃会话。
   List<ChatSession> get ungroupedSessions =>
@@ -452,9 +480,11 @@ class AiController extends ChangeNotifier {
 
   Future<void> renameGroup(String id, String name) async {
     _groups = _groups
-        .map((g) => g.id == id
-            ? g.copyWith(name: name.trim().isEmpty ? g.name : name.trim())
-            : g)
+        .map(
+          (g) => g.id == id
+              ? g.copyWith(name: name.trim().isEmpty ? g.name : name.trim())
+              : g,
+        )
         .toList();
     await _chatStore?.saveGroups(_groups);
     notifyListeners();
@@ -484,8 +514,7 @@ class AiController extends ChangeNotifier {
       (s) => s.id == sessionId,
       orElse: () => _session?.id == sessionId
           ? _session!
-          : ChatSession(
-              id: sessionId, title: '', updatedAt: DateTime.now()),
+          : ChatSession(id: sessionId, title: '', updatedAt: DateTime.now()),
     );
     final updated = target.copyWith(groupId: groupId);
     await _chatStore?.save(updated);
@@ -1124,6 +1153,10 @@ class AiController extends ChangeNotifier {
     if (mem.trim().isNotEmpty) {
       buf.writeln();
       buf.write(mem);
+      // 真正的注入发生了，才累加命中次数。
+      // 放在「真的写进了 Prompt」这个分支里，而不是无条件累加，
+      // 否则记忆库为空时也会计数，那个数字就没意义了。
+      memoryStore?.markHitAll();
     }
 
     return buf.toString();
@@ -1198,6 +1231,13 @@ class AiController extends ChangeNotifier {
       contentDirAbs: contentAbs,
       fetcher: _fetcher,
       memoryStore: memoryStore,
+      // 关掉的工具从 schema 里直接移除。
+      //
+      // 为什么不是「保留但拒绝」：那样模型看得到工具、会去调，
+      // 然后拿到一个「已禁用」，它会以为自己参数写错而反复重试。
+      // 看不到就不会去试，也就不会节外生枝。
+      disabledTools:
+          (settings as dynamic)?.aiDisabledTools as List<String>? ?? const [],
     ).build();
   }
 
