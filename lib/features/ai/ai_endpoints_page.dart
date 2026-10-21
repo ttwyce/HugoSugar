@@ -57,8 +57,7 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
           : ListView.separated(
               padding: const EdgeInsets.all(AppSpace.md),
               itemCount: cfg.endpoints.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(height: AppSpace.sm),
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpace.sm),
               itemBuilder: (_, i) {
                 final ep = cfg.endpoints[i];
                 return _EndpointCard(
@@ -80,10 +79,7 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
                 padding: const EdgeInsets.all(AppSpace.md),
                 child: Text(
                   '当前使用：${cfg.active?.name ?? '-'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: c.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
               ),
             ),
@@ -104,10 +100,8 @@ class _AiEndpointsPageState extends State<AiEndpointsPage> {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _EndpointEditor(
-        controller: widget.controller,
-        existing: existing,
-      ),
+      builder: (_) =>
+          _EndpointEditor(controller: widget.controller, existing: existing),
     );
     return result == true;
   }
@@ -227,7 +221,11 @@ class _EndpointCard extends StatelessWidget {
                   if (active)
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
-                      child: Icon(Icons.check_circle, size: 15, color: c.accent),
+                      child: Icon(
+                        Icons.check_circle,
+                        size: 15,
+                        color: c.accent,
+                      ),
                     ),
                   Expanded(
                     child: Text(
@@ -240,7 +238,11 @@ class _EndpointCard extends StatelessWidget {
                     ),
                   ),
                   PopupMenuButton<String>(
-                    icon: Icon(Icons.more_horiz, size: 18, color: c.textTertiary),
+                    icon: Icon(
+                      Icons.more_horiz,
+                      size: 18,
+                      color: c.textTertiary,
+                    ),
                     onSelected: (v) {
                       if (v == 'edit') onEdit();
                       if (v == 'delete') onDelete();
@@ -250,10 +252,7 @@ class _EndpointCard extends StatelessWidget {
                         value: 'edit',
                         child: Text('编辑（地址 / Key / 模型）'),
                       ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text('删除'),
-                      ),
+                      PopupMenuItem(value: 'delete', child: Text('删除')),
                     ],
                   ),
                 ],
@@ -326,8 +325,6 @@ class _EndpointEditorState extends State<_EndpointEditor> {
   bool _loadingModels = false;
   String? _error;
 
-  /// 思考模式（配在端点上，因为各家协议不同）
-  late ThinkingProtocol _protocol;
   List<AiModel> _models = const [];
 
   bool get _isEdit => widget.existing != null;
@@ -340,7 +337,6 @@ class _EndpointEditorState extends State<_EndpointEditor> {
     _baseUrl = TextEditingController(text: e?.baseUrl ?? '');
     _model = TextEditingController(text: e?.model ?? '');
     _key = TextEditingController();
-    _protocol = e?.thinkingProtocol ?? ThinkingProtocol.off;
   }
 
   @override
@@ -383,215 +379,213 @@ class _EndpointEditorState extends State<_EndpointEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Text(
-                _isEdit ? '编辑端点' : '添加端点',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: c.textPrimary,
-                ),
-              ),
-              const SizedBox(height: AppSpace.md),
-
-              TextField(
-                controller: _name,
-                decoration: const InputDecoration(
-                  labelText: '名称',
-                  helperText: '随便起，比如「DeepSeek」「备用」',
-                ),
-              ),
-              const SizedBox(height: AppSpace.sm),
-
-              TextField(
-                controller: _baseUrl,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: '接口地址',
-                  hintText: 'https://api.openai.com/v1',
-                  helperText: '填到 /v1 就行，不用写 /chat/completions',
-                  helperMaxLines: 2,
-                ),
-              ),
-              const SizedBox(height: AppSpace.sm),
-
-              TextField(
-                controller: _key,
-                obscureText: _obscure,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  labelText: 'API Key',
-                  hintText: _isEdit ? '留空则不修改' : 'sk-...',
-                  helperText: _isEdit && widget.existing!.keyHint.isNotEmpty
-                      ? '已保存：${widget.existing!.keyHint}'
-                      : '存在应用私有目录，权限 0600',
-                  helperMaxLines: 2,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      size: 18,
-                    ),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpace.sm),
-
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _model,
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: '模型',
-                        hintText: 'gpt-4o-mini',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpace.xs),
-                  // 按钮不能用 Expanded（会和输入框抢宽度），
-                  // 但必须给一个**有限**的宽度约束 —— 否则它在
-                  // 无界环境里会被要求撑到 Infinity。
-                  SizedBox(
-                    width: 92,
-                    height: 48,
-                    child: OutlinedButton(
-                      onPressed: _loadingModels ? null : _loadModels,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                      child: Text(
-                        _loadingModels ? '获取中' : '获取列表',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: AppSpace.sm),
-              // 思考模式。
-              //
-              // 为什么必须放在端点配置里而不是聊天页的全局开关：
-              // 各家协议完全不同（R1 不用请求、Qwen3 要 enable_thinking、
-              // o 系列要 reasoning_effort 且不返回内容）。
-              // 配在这里，用户换端点就自动跟着换协议。
-              DropdownButtonFormField<ThinkingProtocol>(
-                initialValue: _protocol,
-                decoration: const InputDecoration(
-                  labelText: '思考协议',
-                  isDense: true,
-                ),
-                style: TextStyle(fontSize: 13, color: c.textPrimary),
-                items: [
-                  for (final m in ThinkingProtocol.values)
-                    DropdownMenuItem(
-                      value: m,
-                      child: Text(m.label, style: const TextStyle(fontSize: 13)),
-                    ),
-                ],
-                onChanged: (v) =>
-                    setState(() => _protocol = v ?? ThinkingProtocol.off),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4, left: 2),
-                child: Text(
-                  _protocolHint,
-                  style: TextStyle(fontSize: 11, color: c.textTertiary),
-                ),
-              ),
-              if (chatModels.isNotEmpty) ...[
-                const SizedBox(height: AppSpace.sm),
                 Text(
-                  '点选模型（已过滤掉 embedding/tts 等不能对话的）',
-                  style: TextStyle(fontSize: 11, color: c.textTertiary),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  _isEdit ? '编辑端点' : '添加端点',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
                   ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: chatModels.length,
-                    itemBuilder: (_, i) {
-                      final m = chatModels[i];
-                      final selected = m.id == _model.text.trim();
-                      return InkWell(
-                        onTap: () => setState(() => _model.text = m.id),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 9,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                selected
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_unchecked,
-                                size: 15,
-                                color: selected ? c.accent : c.textTertiary,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  m.id,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontFamily: 'monospace',
-                                    color: selected ? c.accent : c.textPrimary,
+                ),
+                const SizedBox(height: AppSpace.md),
+
+                TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(
+                    labelText: '名称',
+                    helperText: '随便起，比如「DeepSeek」「备用」',
+                  ),
+                ),
+                const SizedBox(height: AppSpace.sm),
+
+                TextField(
+                  controller: _baseUrl,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: '接口地址',
+                    hintText: 'https://api.openai.com/v1',
+                    helperText: '填到 /v1 就行，不用写 /chat/completions',
+                    helperMaxLines: 2,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.sm),
+
+                TextField(
+                  controller: _key,
+                  obscureText: _obscure,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'API Key',
+                    hintText: _isEdit ? '留空则不修改' : 'sk-...',
+                    helperText: _isEdit && widget.existing!.keyHint.isNotEmpty
+                        ? '已保存：${widget.existing!.keyHint}'
+                        : '存在应用私有目录，权限 0600',
+                    helperMaxLines: 2,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: 18,
+                      ),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpace.sm),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _model,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: '模型',
+                          hintText: 'gpt-4o-mini',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpace.xs),
+                    // 按钮不能用 Expanded（会和输入框抢宽度），
+                    // 但必须给一个**有限**的宽度约束 —— 否则它在
+                    // 无界环境里会被要求撑到 Infinity。
+                    SizedBox(
+                      width: 92,
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _loadingModels ? null : _loadModels,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
+                        child: Text(
+                          _loadingModels ? '获取中' : '获取列表',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: AppSpace.xs),
+                // 思考方式不在这里配。
+                //
+                // 原因：「要不要思考」是业务意图（人对话里选），
+                // 「用 enable_thinking 还是 reasoning_effort」是实现细节（App 自己猜）。
+                // 把后者摆到用户面前，等于要他背各家 API 的差异。
+                // 猜错了也不会报错：服务端说不认这个字段时
+                // 会自动去掉重发一次（见 AiClient._isUnsupportedParam）。
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, left: 2, bottom: 2),
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome, size: 12, color: c.textTertiary),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '思考深度在对话页选，这里不用管',
+                          style: TextStyle(fontSize: 11, color: c.textTertiary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (chatModels.isNotEmpty) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(
+                    '点选模型（已过滤掉 embedding/tts 等不能对话的）',
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: chatModels.length,
+                      itemBuilder: (_, i) {
+                        final m = chatModels[i];
+                        final selected = m.id == _model.text.trim();
+                        return InkWell(
+                          onTap: () => setState(() => _model.text = m.id),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 9,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  selected
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  size: 15,
+                                  color: selected ? c.accent : c.textTertiary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    m.id,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                      color: selected
+                                          ? c.accent
+                                          : c.textPrimary,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-
-              if (_error != null) ...[
-                const SizedBox(height: AppSpace.sm),
-                Text(
-                  _error!,
-                  style: TextStyle(fontSize: 12, height: 1.5, color: c.danger),
-                ),
-              ],
-
-              const SizedBox(height: AppSpace.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _busy
-                          ? null
-                          : () => Navigator.of(context).pop(false),
-                      child: const Text('取消'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpace.sm),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _busy ? null : _save,
-                      child: Text(_busy ? '保存中…' : '保存'),
+                        );
+                      },
                     ),
                   ),
                 ],
-              ),
-            ],
+
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpace.sm),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: c.danger,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: AppSpace.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        child: const Text('取消'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpace.sm),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _busy ? null : _save,
+                        child: Text(_busy ? '保存中…' : '保存'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -649,18 +643,6 @@ class _EndpointEditorState extends State<_EndpointEditor> {
   /// 当前思考模式的说明。写清楚「会不会真的思考」，
   /// 因为选错的表现是「开关开了但什么都没有」，很容易被当成 bug。
   /// 协议的说明。
-  ///
-  /// 关键要说清「这个协议能不能表达档位」——
-  /// 用户以为选了「深度」就更用力思考，但如果端点只支持
-  /// enable_thinking（布尔），那 low/high 的结果完全一样。
-  String get _protocolHint => switch (_protocol) {
-        ThinkingProtocol.off => '不发思考参数。普通对话模型选这个',
-        ThinkingProtocol.alwaysOn => '模型本身总是思考，只显示不请求（R1 官方端点）',
-        ThinkingProtocol.enableThinking =>
-          '开/关两档。注意：该协议没有档位，选轻量/深度效果相同',
-        ThinkingProtocol.reasoningEffort =>
-          '支持 low/medium/high 档位。o1/o3 不返回思考内容',
-      };
 
   Future<void> _save() async {
     final base = _baseUrl.text.trim();
@@ -686,7 +668,9 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         name: finalName,
         baseUrl: base,
         model: _model.text.trim(),
-        thinkingProtocol: _protocol,
+        // 保留用户旧配置；不在 UI 暴露，但也不抹掉
+        thinkingProtocol:
+            widget.existing?.thinkingProtocol ?? ThinkingProtocol.off,
       );
       await widget.controller.updateEndpoint(
         updated,
@@ -698,7 +682,8 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         baseUrl: base,
         model: _model.text.trim(),
         apiKey: _key.text.trim(),
-        thinkingProtocol: _protocol,
+        thinkingProtocol:
+            widget.existing?.thinkingProtocol ?? ThinkingProtocol.off,
       );
     }
 

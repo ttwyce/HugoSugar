@@ -104,25 +104,36 @@ class AiController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 当前端点用哪种思考协议。
+  /// 当前端点实际用哪种思考协议（含自动推断）。
   ThinkingProtocol get thinkingProtocol =>
-      activeEndpoint?.thinkingProtocol ?? ThinkingProtocol.off;
+      activeEndpoint?.effectiveProtocol ?? ThinkingProtocol.off;
 
   /// 档位在这个端点上是否真的生效。
   ///
-  /// 三种「不生效」必须区分对待，否则用户会以为功能坏了：
-  /// - 端点不支持思考：选了也没用
+  /// 四种情况必须区分对待，否则用户会以为功能坏了：
+  /// - **未配置**：端点没选协议（默认值）—— 这不是「不支持」，
+  ///   而是「你还没告诉 App 该用哪种方式发思考参数」。
+  ///   两者文案必须不同，否则用户会误以为自己的模型不行。
   /// - 总是思考（R1）：关不掉
   /// - 开关式：能开关，但不能调深浅
+  /// - 档位式：完整生效（返回 null）
   String? get thinkingHint {
     final p = thinkingProtocol;
-    if (p == ThinkingProtocol.off) return '当前端点不支持思考';
+    // 没配端点的时候不要报「不支持思考」，那是两件事。
+    if (activeEndpoint == null) return null;
     if (p == ThinkingProtocol.alwaysOn) return '当前模型总是思考，无法关闭';
     if (p == ThinkingProtocol.enableThinking) {
       return '当前端点只能开关，选轻量或深度效果相同';
     }
-    return null;
+    if (p == ThinkingProtocol.reasoningEffort) return null;
+    // off：按模型名推不出来，而且用户也没显式配。
+    return '推断不出这个模型该怎么思考，将按普通模型处理';
   }
+
+  /// 不再需要用户去端点里配思考协议。
+  ///
+  /// 保留字段只为了不大幅改动调用方，永远为 false。
+  bool get needsThinkingSetup => false;
 
   /// 上下文压缩器。用设置里的阈值构造，见 [_compressorOf]。
   ContextCompressor _compressorOf() {
@@ -286,8 +297,8 @@ class AiController extends ChangeNotifier {
 
     final targetId = (endpointId ?? '').trim().isEmpty
         ? (_config.activeId.isEmpty
-            ? (activeEndpoint?.id ?? '')
-            : _config.activeId)
+              ? (activeEndpoint?.id ?? '')
+              : _config.activeId)
         : endpointId!.trim();
     if (targetId.isEmpty) return false;
 
@@ -409,8 +420,7 @@ class AiController extends ChangeNotifier {
   /// 用户直接关掉了面板，按「拒绝」处理。
   Future<bool> send(
     String userText, {
-    required Future<ApprovalDecision?> Function(ApprovalRequest req)
-        onApproval,
+    required Future<ApprovalDecision?> Function(ApprovalRequest req) onApproval,
 
     /// 覆盖「喂给模型的历史」，只影响这一轮，不写入 session。
     ///
@@ -504,7 +514,8 @@ class AiController extends ChangeNotifier {
     _lastCompressed = compressed.compressed;
     _lastDroppedCount = compressed.droppedCount;
     _lastSentCount = compressed.messages.length;
-    _lastSentTokens = estimateMessagesTokens(compressed.messages) +
+    _lastSentTokens =
+        estimateMessagesTokens(compressed.messages) +
         estimateTokens(_buildSystemPrompt());
 
     final systemPrompt = _buildSystemPrompt();
@@ -696,6 +707,7 @@ class AiController extends ChangeNotifier {
     await recallFromEntry(entry, rollbackFiles: true);
     return send(text, onApproval: onApproval);
   }
+
   /// 对同一条提问再生成一次回答，保留之前的回答。
   ///
   /// ## 与 resend 的区别（这是本方法的全部意义）
@@ -739,12 +751,9 @@ class AiController extends ChangeNotifier {
     // 关键：不改 _session。旧回答留着，新回答由 send 追加。
     final history = s.entries.sublist(0, lastUserIdx);
 
-    return send(
-      question,
-      onApproval: onApproval,
-      historyEntries: history,
-    );
+    return send(question, onApproval: onApproval, historyEntries: history);
   }
+
   /// 重发：撤回这条用户消息，原样再发一遍。
   Future<bool> resend(
     ChatEntry entry, {
@@ -877,14 +886,14 @@ class AiController extends ChangeNotifier {
 
   /// 复制一条 entry 并清空 backups（用它表示「已撤销」）
   ChatEntry _stripBackup(ChatEntry e) => ChatEntry(
-        role: e.role,
-        text: e.text,
-        at: e.at,
-        toolCalls: e.toolCalls,
-        isError: e.isError,
-        promptTokens: e.promptTokens,
-        completionTokens: e.completionTokens,
-      );
+    role: e.role,
+    text: e.text,
+    at: e.at,
+    toolCalls: e.toolCalls,
+    isError: e.isError,
+    promptTokens: e.promptTokens,
+    completionTokens: e.completionTokens,
+  );
 
   /// 把本轮产生的备份挂到最后一条 entry 上，供 UI 显示「撤销」。
   ///
@@ -957,7 +966,8 @@ class AiController extends ChangeNotifier {
     _session = updated;
     await _chatStore?.save(updated);
   }
-String _buildSystemPrompt() {
+
+  String _buildSystemPrompt() {
     final buf = StringBuffer();
     // 决议 5：用户覆盖优先，没有覆盖才用内置默认。
     // 空串表示「未覆盖」而不是「用空 Prompt」—— 后者会让模型完全
@@ -1011,8 +1021,10 @@ String _buildSystemPrompt() {
         final alive = all.where((n) => !n.isDeleted).toList();
         if (_categoryIds.isEmpty) return alive;
         return alive
-            .where((n) => n.categoryId != null &&
-                _categoryIds.contains(n.categoryId))
+            .where(
+              (n) =>
+                  n.categoryId != null && _categoryIds.contains(n.categoryId),
+            )
             .toList();
       },
       readNote: (id) {
@@ -1028,10 +1040,12 @@ String _buildSystemPrompt() {
         if (!_readNotes && _categoryIds.isEmpty) return const <Note>[];
         final k = kw.toLowerCase();
         return all
-            .where((n) =>
-                !n.isDeleted &&
-                (n.title.toLowerCase().contains(k) ||
-                    n.content.toLowerCase().contains(k)))
+            .where(
+              (n) =>
+                  !n.isDeleted &&
+                  (n.title.toLowerCase().contains(k) ||
+                      n.content.toLowerCase().contains(k)),
+            )
             .toList();
       },
       listPosts: () => posts
@@ -1046,13 +1060,15 @@ String _buildSystemPrompt() {
           // 但 _refreshPosts 扫的是 content/posts，永远看不到它。
           //
           // 表现就是「AI 说写好了，文章列表里没有」。
-          .map((p) => (
-                path: pkg.posix.relative(
-                  p.relativePath.replaceAll('\\', '/'),
-                  from: 'content',
-                ),
-                title: p.title,
-              ))
+          .map(
+            (p) => (
+              path: pkg.posix.relative(
+                p.relativePath.replaceAll('\\', '/'),
+                from: 'content',
+              ),
+              title: p.title,
+            ),
+          )
           .toList(),
       readPost: _readPostContent,
       writePost: _writePostContent,

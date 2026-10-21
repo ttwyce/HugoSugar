@@ -94,11 +94,11 @@ class AiClient {
   void dispose() => _client.close();
 
   Map<String, String> _headers(String apiKey) => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-        // 部分中转站要求这个头，不要求时无害
-        'Accept': 'text/event-stream',
-      };
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $apiKey',
+    // 部分中转站要求这个头，不要求时无害
+    'Accept': 'text/event-stream',
+  };
 
   /// 拉取模型列表。
   ///
@@ -120,15 +120,21 @@ class AiClient {
           .get(endpoint.uri('models'), headers: _headers(apiKey))
           .timeout(timeout);
     } on TimeoutException {
-      throw AiException(AiErrorKind.network, '获取模型列表超时',
-          hint: '检查网络，或直接手动填写模型名');
+      throw AiException(
+        AiErrorKind.network,
+        '获取模型列表超时',
+        hint: '检查网络，或直接手动填写模型名',
+      );
     } catch (e) {
       throw AiException(AiErrorKind.network, '获取模型列表失败：$e');
     }
 
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw AiException(AiErrorKind.badKey, 'API Key 无效或没有权限',
-          hint: '检查 key 是否正确、是否已过期');
+      throw AiException(
+        AiErrorKind.badKey,
+        'API Key 无效或没有权限',
+        hint: '检查 key 是否正确、是否已过期',
+      );
     }
     if (res.statusCode >= 500) {
       throw AiException(AiErrorKind.serverError, '服务端错误 ${res.statusCode}');
@@ -280,8 +286,10 @@ class AiClient {
     // 混合模型（Qwen3 等）默认走非思考路径，不发参数就不思考，
     // 光靠解析 reasoning_content 是等不到内容的。
     //
-    // 各家的参数名和取值完全不同，见 ThinkingMode 的注释。
-    switch (endpoint.thinkingProtocol) {
+    // 用 effectiveProtocol 而不是 thinkingProtocol：后者可能是 off（用户没配），
+    // 前者会按模型名推断一个合理值。用户不应该为
+    // 「该发 enable_thinking 还是 reasoning_effort」负责。
+    switch (endpoint.effectiveProtocol) {
       case ThinkingProtocol.off:
         // 什么都不发。普通模型收到未知字段可能直接 400。
         break;
@@ -302,40 +310,63 @@ class AiClient {
         break;
     }
 
-    http.StreamedResponse res;
-    try {
+    // 发送循环：允许一次「参数被拒就去掉重发」。
+    //
+    // 为什么需要这个：我们按模型名推断协议，推不准是常态（中转站改了名、
+    // 自建服务封了字段）。若不降级，用户会看到一个 400，
+    // 而真正的原因是「App 多发了一个你不认的字段」——
+    // 这不是用户的错，不该让他去排查。
+    //
+    // 只试一次：两次都不行说明问题不在参数，继续重试只会拖延。
+    http.StreamedResponse? res;
+    for (var pass = 0; pass < 2; pass++) {
       final req = http.Request('POST', endpoint.uri('chat/completions'))
         ..headers.addAll(_headers(apiKey))
         ..bodyBytes = utf8.encode(jsonEncode(body));
 
-      res = await _client.send(req).timeout(timeout);
-    } on TimeoutException {
-      throw AiException(AiErrorKind.network, '连接 AI 端点超时',
-          hint: '检查网络或端点地址');
-    } catch (e) {
-      throw AiException(AiErrorKind.network, '请求失败：$e');
+      final http.StreamedResponse r;
+      try {
+        r = await _client.send(req).timeout(timeout);
+      } on TimeoutException {
+        throw AiException(AiErrorKind.network, '连接 AI 端点超时', hint: '检查网络或端点地址');
+      } catch (e) {
+        throw AiException(AiErrorKind.network, '请求失败：$e');
+      }
+
+      if (r.statusCode == 200) {
+        res = r;
+        break;
+      }
+
+      // 错误响应往往是普通 JSON，不是 SSE。
+      // 这里必须先判断状态码，否则会拿错误 JSON 去喂 SSE 解析器，
+      // 最终报成「流解析失败」，把真正的原因（key 错了）盖掉。
+      final text = await _readAll(r);
+
+      if (pass == 0 && _isUnsupportedParam(r.statusCode, text)) {
+        // 把思考参数全部摸掉，退回「什么都不发」
+        final a = body.remove('enable_thinking');
+        final b = body.remove('reasoning_effort');
+        if (a != null || b != null) continue;
+      }
+
+      throw _mapHttpError(r.statusCode, text);
     }
 
-    // 错误响应往往是普通 JSON，不是 SSE。
-    // 这里必须先判断状态码，否则会拿错误 JSON 去喂 SSE 解析器，
-    // 最终报成「流解析失败」，把真正的原因（key 错了）盖掉。
-    if (res.statusCode != 200) {
-      final text = await _readAll(res);
-      throw _mapHttpError(res.statusCode, text);
-    }
+    final response = res!;
 
     final parser = SseParser();
     var sawDone = false;
 
     try {
       await for (final chunk
-          in res.stream.transform(utf8.decoder).timeout(timeout)) {
+          in response.stream.transform(utf8.decoder).timeout(timeout)) {
         // 每个网络分片都检查一次取消。
         // 放在这里而不是只在开头检查一次：模型输出可能持续几十秒，
         // 只在开头查等于「点了停止还在收完整篇」。
         if (cancelToken?.isCancelled ?? false) {
           // 主动排空并关闭，让服务端尽快停止生成
-          unawaited(res.stream.drain<void>().catchError((_) {}));
+          unawaited(response.stream.drain<void>().catchError((_) {}));
           throw const CancelledException();
         }
 
@@ -426,12 +457,40 @@ class AiClient {
 
   Future<String> _readAll(http.StreamedResponse res) async {
     try {
-      return await res.stream.transform(utf8.decoder).join().timeout(
-            const Duration(seconds: 10),
-          );
+      return await res.stream
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
     } catch (_) {
       return '';
     }
+  }
+
+  /// 这个 400 是不是因为「你多发了一个我不认的字段」。
+  ///
+  /// 为什么触发条件收得这么窄：只有 400/422 而且错误文本提到了参数名，
+  /// 才能断定是字段问题。广泛匹配「content」「model」之类的字眼会把
+  /// 真正的错误（模型不存在、消息格式错）也当成参数问题去掉重发，
+  /// 结果是「去掉了一个没问题的字段、真错误依然在」。
+  ///
+  /// 另外也要认这种没有状态码但仍是 400 的写法。
+  bool _isUnsupportedParam(int status, String body) {
+    if (status != 400 && status != 422) return false;
+    final t = body.toLowerCase();
+    final mentionsField =
+        t.contains('enable_thinking') || t.contains('reasoning_effort');
+    if (!mentionsField) return false;
+    // “unexpected” “unsupported” “invalid” “unknown” “extra” “not permitted”
+    return t.contains('unexpected') ||
+        t.contains('unsupported') ||
+        t.contains('invalid') ||
+        t.contains('unknown') ||
+        t.contains('extra') ||
+        t.contains('not permitted') ||
+        t.contains('not allowed') ||
+        // 中文实现
+        t.contains('不支持') ||
+        t.contains('未知');
   }
 
   AiException _mapHttpError(int status, String body) {
@@ -455,14 +514,23 @@ class AiClient {
     switch (status) {
       case 401:
       case 403:
-        return AiException(AiErrorKind.badKey, 'API Key 无效：$detail',
-            hint: '到设置里检查这个端点的 key');
+        return AiException(
+          AiErrorKind.badKey,
+          'API Key 无效：$detail',
+          hint: '到设置里检查这个端点的 key',
+        );
       case 404:
-        return AiException(AiErrorKind.badRequest, '接口不存在（404）',
-            hint: '端点地址可能少了或多了 /v1');
+        return AiException(
+          AiErrorKind.badRequest,
+          '接口不存在（404）',
+          hint: '端点地址可能少了或多了 /v1',
+        );
       case 429:
-        return AiException(AiErrorKind.rateLimited, '请求过于频繁或额度用尽',
-            hint: '稍后再试，或换一个端点');
+        return AiException(
+          AiErrorKind.rateLimited,
+          '请求过于频繁或额度用尽',
+          hint: '稍后再试，或换一个端点',
+        );
       default:
         if (status >= 500) {
           return AiException(AiErrorKind.serverError, '服务端错误 $status：$detail');

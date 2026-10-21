@@ -44,12 +44,12 @@ enum ThinkingLevel {
   /// o 系列只认 low/medium/high；xhigh 不在其列，
   /// 降级为 high 而不是报 400。
   String get effortValue => switch (this) {
-        none => 'low',
-        low => 'low',
-        medium => 'medium',
-        high => 'high',
-        xhigh => 'high',
-      };
+    none => 'low',
+    low => 'low',
+    medium => 'medium',
+    high => 'high',
+    xhigh => 'high',
+  };
 }
 
 /// 端点用哪种协议表达「思考」。
@@ -89,6 +89,53 @@ enum ThinkingProtocol {
   /// 旧版本存的是 thinkingMode 的 id（none/parse_only/
   /// enable_thinking/reasoning_effort），这里做一次映射，
   /// 避免升级后端点配置被清成 off。
+  /// 按模型名推断该用哪种协议。
+  ///
+  /// 为什么要推断而不是让用户选：「要不要思考」是业务意图，
+  /// 「用哪个字段名」是实现细节。把后者摆到用户面前，等于要求
+  /// 他背下各家 API 的差异，而那些差异对他没有任何用处。
+  ///
+  /// 推断不准也不会出现硬伤：发错了参数会被 [_isUnsupportedParam] 识别，
+  /// 然后自动降级重发一次，用户只是多等一个回合。
+  static ThinkingProtocol infer(String model) {
+    final m = model.toLowerCase();
+
+    // 档位式：OpenAI o 系列（o1/o3/o4-mini）、gpt-5 推理模式、
+    // 以及各家对齐 reasoning_effort 的实现。
+    // 这类模型通常不返回思考内容，只影响推理强度。
+    // 注意顺序：R1 的判断必须在 'reasoner' 之前。
+    // 'deepseek-reasoner' 是 R1 的官方别名，它不需要请求参数、
+    // 并且会返回 reasoning_content；如果先被 'reasoner' 命中，
+    // 就会被误判成「不返回思考内容的 o 系列」，思考过程直接看不见。
+    if (m.contains('r1') || m.contains('deepseek-reason')) return alwaysOn;
+
+    if (RegExp(r'(^|[/_-])o[1345](-|$|mini)').hasMatch(m) ||
+        m.contains('gpt-5') ||
+        m.contains('reasoner')) {
+      return reasoningEffort;
+    }
+
+    // 开关式：Qwen3 混合模型用 enable_thinking。
+    // 不发它就默认不思考，这是最容易被误以为「模型不行」的情况。
+    if (m.contains('qwen3') ||
+        m.contains('qwq') ||
+        m.contains('thinking') ||
+        m.contains('glm-4.5') ||
+        m.contains('glm-4.6')) {
+      return enableThinking;
+    }
+
+    // 总是思考：R1 系列及各家对齐实现（deepseek-r1、distill、
+    // siliconflow 的 R1、vllm 部署）。不需要请求参数，直接有。
+    // 默认：发一个通用的 enable_thinking。
+    //
+    // 为什么选它而不是 off：用户在对话里选了「深度」，
+    // 结果 App 什么都不发，那就是假的。多数兄弟实现
+    // （硅基流动、中转站、vLLM、Ollama）都认 enable_thinking，
+    // 不认的会报错，那时候自动降级到 off（见 [_isUnsupportedParam]）。
+    return enableThinking;
+  }
+
   static ThinkingProtocol fromId(String? id) {
     final legacy = switch (id) {
       'parse_only' => alwaysOn, // 旧名
@@ -133,6 +180,19 @@ class AiEndpoint {
   /// 打码后的 key 片段，仅用于界面展示「已配置哪把 key」
   final String keyHint;
 
+  /// 实际要用的协议。
+  ///
+  /// 为什么不让用户配：这一层是「把想多深」翻译成「哪个字段名」，
+  /// 属于实现细节。用户在对话里选了档位，App 自己判断该怎么发。
+  ///
+  /// 优先级：
+  /// 1. 用户显式配过（非 off）—— 尊重旧配置，不抢人家的选择
+  /// 2. 按模型名推断—— 默认行为，让新建端点开箱就能思考
+  ThinkingProtocol get effectiveProtocol =>
+      thinkingProtocol != ThinkingProtocol.off
+      ? thinkingProtocol
+      : ThinkingProtocol.infer(model);
+
   /// 思考协议。见 [ThinkingProtocol]。
   ///
   /// 配在端点上而不是全局：同一个 App 可能同时接 DeepSeek（支持
@@ -161,25 +221,25 @@ class AiEndpoint {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'baseUrl': baseUrl,
-        'model': model,
-        'keyHint': keyHint,
-        'thinkingProtocol': thinkingProtocol.id,
-      };
+    'id': id,
+    'name': name,
+    'baseUrl': baseUrl,
+    'model': model,
+    'keyHint': keyHint,
+    'thinkingProtocol': thinkingProtocol.id,
+  };
 
   static AiEndpoint fromJson(Map<String, dynamic> j) => AiEndpoint(
-        id: j['id'] as String? ?? '',
-        name: j['name'] as String? ?? '',
-        baseUrl: j['baseUrl'] as String? ?? '',
-        model: j['model'] as String? ?? '',
-        keyHint: j['keyHint'] as String? ?? '',
-        // 兼容旧字段名 thinkingMode，按 id 映射到新协议
-        thinkingProtocol: ThinkingProtocol.fromId(
-          (j['thinkingProtocol'] ?? j['thinkingMode']) as String?,
-        ),
-      );
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? '',
+    baseUrl: j['baseUrl'] as String? ?? '',
+    model: j['model'] as String? ?? '',
+    keyHint: j['keyHint'] as String? ?? '',
+    // 兼容旧字段名 thinkingMode，按 id 映射到新协议
+    thinkingProtocol: ThinkingProtocol.fromId(
+      (j['thinkingProtocol'] ?? j['thinkingMode']) as String?,
+    ),
+  );
 
   /// 拼出具体的接口地址。
   ///
@@ -226,9 +286,9 @@ class AiConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'endpoints': endpoints.map((e) => e.toJson()).toList(),
-        'activeId': activeId,
-      };
+    'endpoints': endpoints.map((e) => e.toJson()).toList(),
+    'activeId': activeId,
+  };
 
   static AiConfig fromJson(Map<String, dynamic> j) {
     final raw = j['endpoints'];
@@ -242,10 +302,7 @@ class AiConfig {
         }
       }
     }
-    return AiConfig(
-      endpoints: list,
-      activeId: j['activeId'] as String? ?? '',
-    );
+    return AiConfig(endpoints: list, activeId: j['activeId'] as String? ?? '');
   }
 }
 
