@@ -78,6 +78,7 @@ class _AppShellState extends State<AppShell> {
             onThemeModeChanged: widget.onThemeModeChanged,
             siteController: widget.siteController,
             settingsController: widget.settingsController,
+            aiController: widget.aiController,
           ),
         ],
       ),

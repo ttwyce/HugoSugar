@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../note/note.dart';
 import 'ai_tool.dart';
+import '../memory_store.dart';
 import 'html_text.dart';
 import 'page_decoder.dart';
 import 'path_guard.dart';
@@ -171,6 +172,7 @@ class ToolRegistry {
     required this.writePost,
     required this.contentDirAbs,
     this.fetcher,
+    this.memoryStore,
   });
 
   /// 提供当前可读的想法（已排除回收站）
@@ -191,6 +193,10 @@ class ToolRegistry {
   final String contentDirAbs;
 
   final UrlFetcher? fetcher;
+
+  /// 记忆库。为 null 时三个记忆工具不注册 ——
+  /// 比注册了再返回「功能未启用」更干净：模型看不到工具就不会去试。
+  final MemoryStore? memoryStore;
 
   /// 网页缓存：同 URL 24h 复用，避免多轮对话反复抓同一页
   final Map<String, _CachedPage> _cache = {};
@@ -223,9 +229,7 @@ class ToolRegistry {
         description: '在所有想法里做关键词全文搜索，返回命中的想法和上下文片段。'
             '需要找具体素材、术语、过往记录时用。',
         parameters: objectSchema(
-          properties: {
-            'keyword': stringProp('要搜索的关键词'),
-          },
+          properties: {'keyword': stringProp('要搜索的关键词')},
           required: ['keyword'],
         ),
         execute: _execSearchNotes,
@@ -236,7 +240,7 @@ class ToolRegistry {
             '写新文章前先看几篇，能学到用户的格式和文风。',
         parameters: objectSchema(
           properties: {
-            'path': stringProp('文章的相对路径，如 posts/hello.md'),
+            'path': stringProp('文章的相对路径（相对 content 目录），如 posts/hello.md'),
           },
           required: ['path'],
         ),
@@ -248,7 +252,7 @@ class ToolRegistry {
             '用户确认后才真正落盘。内容必须包含完整的 Front Matter。',
         parameters: objectSchema(
           properties: {
-            'path': stringProp('相对路径，如 posts/my-post.md，必须以 .md 结尾'),
+            'path': stringProp('相对 content 目录的路径，如 posts/my-post.md，必须以 .md 结尾'),
             'content': stringProp('完整的文件内容，含 Front Matter 和正文'),
           },
           required: ['path', 'content'],
@@ -262,10 +266,70 @@ class ToolRegistry {
             '仅在用户明确给出网址、或需要查证具体文档时使用。'
             '不要主动联网搜索，不要连续抓取同一网站的多个页面。',
         parameters: objectSchema(
-          properties: {'url': stringProp('要抓取的完整网址（https）')},
+          properties: {'url': stringProp('要抓取的完整网址（http 或 https）')},
           required: ['url'],
         ),
         execute: _execFetchUrl,
+      ),
+      // 记忆类工具。没有 store 就不注册 —— 模型看不到就不会去试。
+      if (memoryStore != null) ..._memoryTools(),
+    ];
+  }
+
+
+  /// 3 个记忆工具的声明。
+  ///
+  /// 共同设计要点都在描述里，因为描述就是提示词：
+  /// 模型只有靠读描述才能知道什么值得记、怎么写。
+  List<AiTool> _memoryTools() {
+    return [
+      AiTool(
+        name: 'save_memory',
+        description: '把关于用户的长期事实存入记忆库。'
+            '值得记：写作风格（句式长短、用词偏好、结构习惯）、'
+            '性格与喜好（在意什么、反感什么）、'
+            '工作习惯（技术栈、常用工具、流程偏好）。'
+            '不值得记：一次性的任务内容、临时的语气要求、'
+            '以及本会话里已经说过的短期信息。'
+            '必须写成关于用户的事实（第三人称陈述句），例如'
+            '「用户偏好短句，不喜欢形容词堆砌」，'
+            '而不要写成指令（「你要用短句回复用户」）——'
+            '记忆是参考信息，不是给模型的命令。'
+            '同一条事实不要重复保存；若已有相近的一条，'
+            '用 update_memory 改写它，而不是新增。',
+        parameters: objectSchema(
+          properties: {
+            'content': stringProp('一句话事实，如「用户写技术博客，偏好先给结论再展开」'),
+            'category': stringProp(
+                '分类：style(写作风格) / persona(性格喜好) / workflow(工作习惯) / other'),
+          },
+          required: ['content', 'category'],
+        ),
+        execute: _execSaveMemory,
+      ),
+      AiTool(
+        name: 'update_memory',
+        description: '改写一条已有的记忆（合并重复、纠正过时信息）。'
+            '用 save_memory 返回的 id，或工具提示的相近条目 id。',
+        parameters: objectSchema(
+          properties: {
+            'id': stringProp('要改写的记忆 id'),
+            'content': stringProp('改写后的完整内容'),
+            'category': stringProp('可选，同时改分类'),
+          },
+          required: ['id', 'content'],
+        ),
+        execute: _execUpdateMemory,
+      ),
+      AiTool(
+        name: 'delete_memory',
+        description: '删除一条记忆。仅当用户明确要求「忘掉这件事」，'
+            '或该记忆确实错误时才用。不要自作主张清理。',
+        parameters: objectSchema(
+          properties: {'id': stringProp('要删除的记忆 id')},
+          required: ['id'],
+        ),
+        execute: _execDeleteMemory,
       ),
     ];
   }
@@ -452,6 +516,89 @@ class ToolRegistry {
       return ToolResult.fail('抓取失败：$e');
     }
   }
+
+  // ── 记忆 ──────────────────────────────────────────
+
+  Future<ToolResult> _execSaveMemory(Map<String, dynamic> args) async {
+    final store = memoryStore;
+    if (store == null) return ToolResult.fail('记忆库未启用');
+
+    final content = (args['content'] as String? ?? '').trim();
+    final category = (args['category'] as String? ?? '').trim();
+    if (content.isEmpty) return ToolResult.fail('内容为空');
+
+    // 判重：有相近的就提示模型去 update，而不是新增一条同义句。
+    //
+    // 不直接替它合并 —— 合并需要判断「新信息是否覆盖旧的」，
+    // 那是模型的活。工具只负责把「已经有相近的」这个事实告诉它。
+    final similar = store.findSimilar(content);
+    if (similar != null) {
+      return ToolResult(
+        ok: false,
+        text: '已有相近的记忆（id: ${similar.id}）：${similar.content}\n'
+            '如需补充或纠正，请调用 update_memory 改写它。',
+        detail: '与已有记忆重复，未写入',
+      );
+    }
+
+    final added = await store.add(content: content, category: category);
+    if (added == null) {
+      return ToolResult(
+        ok: false,
+        text: '记忆库已满（${MemoryStore.maxCount} 条）。\n'
+            '请先合并或删除价值最低的几条，再保存这条。',
+        detail: '记忆库已满，未写入',
+      );
+    }
+
+    return ToolResult(
+      ok: true,
+      text: '已记住（id: ${added.id}）',
+      detail: '记住：$content',
+    );
+  }
+
+  Future<ToolResult> _execUpdateMemory(Map<String, dynamic> args) async {
+    final store = memoryStore;
+    if (store == null) return ToolResult.fail('记忆库未启用');
+
+    final id = (args['id'] as String? ?? '').trim();
+    final content = (args['content'] as String? ?? '').trim();
+    final category = (args['category'] as String? ?? '').trim();
+    if (id.isEmpty) return ToolResult.fail('缺少 id');
+    if (content.isEmpty) return ToolResult.fail('内容为空');
+
+    final ok = await store.update(
+      id,
+      content: content,
+      category: category.isEmpty ? null : category,
+    );
+    if (!ok) return ToolResult.fail('找不到 id 为 $id 的记忆');
+
+    return ToolResult(
+      ok: true,
+      text: '已更新记忆 $id',
+      detail: '更新记忆：$content',
+    );
+  }
+
+  Future<ToolResult> _execDeleteMemory(Map<String, dynamic> args) async {
+    final store = memoryStore;
+    if (store == null) return ToolResult.fail('记忆库未启用');
+
+    final id = (args['id'] as String? ?? '').trim();
+    if (id.isEmpty) return ToolResult.fail('缺少 id');
+
+    final ok = await store.remove(id);
+    if (!ok) return ToolResult.fail('找不到 id 为 $id 的记忆');
+
+    return ToolResult(
+      ok: true,
+      text: '已删除记忆 $id',
+      detail: '删除一条记忆',
+    );
+  }
+
 }
 
 class _CachedPage {

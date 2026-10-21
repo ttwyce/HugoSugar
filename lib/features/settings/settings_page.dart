@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/ai/ai_controller.dart';
 import '../../core/ai/default_prompt.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
@@ -8,6 +9,7 @@ import '../../core/site/site_controller.dart';
 import '../../shared/widgets.dart';
 import 'author_identity_dialog.dart';
 import 'author_suggestion.dart';
+import 'memory_page.dart';
 import 'token_dialog.dart';
 
 /// 设置页：标准 iOS 风格分组列表。
@@ -18,12 +20,14 @@ class SettingsPage extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.siteController,
     required this.settingsController,
+    required this.aiController,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final SiteController siteController;
   final SettingsController settingsController;
+  final AiController aiController;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -136,6 +140,22 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   /// 编辑单轮 token 上限
+  String _memorySubtitle() {
+    final store = widget.aiController.memoryStore;
+    final n = store?.all.length ?? 0;
+    if (n == 0) return '还没有记忆，AI 会在对话中自动学习';
+    return '已记住 $n 条（可查看、修改、删除）';
+  }
+
+  Future<void> _openMemory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MemoryPage(controller: widget.aiController),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _editMaxTokens() async {
     final sc = widget.settingsController;
     final ctrl = TextEditingController(text: '${sc.aiMaxTokensPerRound}');
@@ -374,6 +394,17 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: _editSystemPrompt,
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.psychology_outlined),
+            title: const Text('记忆库'),
+            subtitle: Text(
+              _memorySubtitle(),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _openMemory,
           ),
           const IndentedDivider(),
           ListTile(

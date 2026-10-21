@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as pkg;
 
 import '../note/note.dart';
@@ -14,6 +15,7 @@ import 'ai_endpoint.dart';
 import 'cancel_token.dart';
 import 'context_compressor.dart';
 import 'chat_store.dart';
+import 'memory_store.dart';
 import 'default_prompt.dart';
 import 'note_context.dart';
 import 'tools/ai_tool.dart';
@@ -44,6 +46,9 @@ class AiController extends ChangeNotifier {
   AiEndpointStore? _endpointStore;
   AiKeyStore? _keyStore;
   ChatStore? _chatStore;
+
+  /// 记忆库（关于用户的长期事实）
+  MemoryStore? memoryStore;
   UrlFetcher? _fetcher;
 
   // ── 状态 ────────────────────────────────────────────
@@ -108,6 +113,11 @@ class AiController extends ChangeNotifier {
     _keyStore = await AiKeyStore.open();
     _chatStore = await ChatStore.open();
     _fetcher = UrlFetcher();
+
+    // 记忆库与对话存在同一层目录（ai/memories.json）
+    final base = await getApplicationSupportDirectory();
+    memoryStore = MemoryStore.at(Directory('${base.path}/ai'));
+    await memoryStore!.load();
     _config = await _endpointStore!.load();
     _sessions = await _chatStore!.listAll();
     notifyListeners();
@@ -833,6 +843,16 @@ String _buildSystemPrompt() {
       }
     }
 
+    // 注入记忆库。
+    //
+    // 放在想法上下文之后：想法是「素材」，记忆是「你是谁」，
+    // 后者更底层，靠后一点模型更容易把它当背景而不是当前任务。
+    final mem = memoryStore?.toPromptBlock() ?? '';
+    if (mem.trim().isNotEmpty) {
+      buf.writeln();
+      buf.write(mem);
+    }
+
     return buf.toString();
   }
 
@@ -898,6 +918,7 @@ String _buildSystemPrompt() {
       writePost: _writePostContent,
       contentDirAbs: contentAbs,
       fetcher: _fetcher,
+      memoryStore: memoryStore,
     ).build();
   }
 
