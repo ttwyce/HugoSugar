@@ -87,6 +87,13 @@ class _EditorPageState extends State<EditorPage> {
   List<int> _matches = const [];
   int _matchIndex = 0;
 
+  /// 预览模式：正文区从「可编辑源码」切换成「富文本渲染」，留在编辑器内，
+  /// 不弹面板、不遮正文。再点一次切回编辑。
+  bool _previewMode = false;
+
+  /// 写作 AI 面板是否内联展开（贴在底部工具栏上方，不用模态遮罩）。
+  bool _aiOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -544,36 +551,53 @@ class _EditorPageState extends State<EditorPage> {
                         onClose: _toggleFind,
                       ),
                     const SizedBox(height: AppSpace.md),
-                    // 正文
+                    // 正文：预览模式渲染富文本，编辑模式是可编辑源码。
                     Expanded(
-                      child: TextField(
-                        controller: _bodyCtrl,
-                        focusNode: _bodyFocus,
-                        scrollController: _scrollCtrl,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        keyboardType: TextInputType.multiline,
-                        style: context.reading.apply(
-                          AppTypography.editorBody.copyWith(
-                            color: c.textPrimary,
-                          ),
-                        ),
-                        decoration: InputDecoration(
-                          filled: false,
-                          contentPadding: EdgeInsets.zero,
-                          hintText: context.tr(T('正文…')),
-                          hintStyle: context.reading.apply(
-                            AppTypography.editorBody.copyWith(
-                              color: c.textTertiary,
+                      child: _previewMode
+                          ? _buildPreviewBody(c)
+                          : TextField(
+                              controller: _bodyCtrl,
+                              focusNode: _bodyFocus,
+                              scrollController: _scrollCtrl,
+                              maxLines: null,
+                              expands: true,
+                              textAlignVertical: TextAlignVertical.top,
+                              keyboardType: TextInputType.multiline,
+                              style: context.reading.apply(
+                                AppTypography.editorBody.copyWith(
+                                  color: c.textPrimary,
+                                ),
+                              ),
+                              decoration: InputDecoration(
+                                filled: false,
+                                contentPadding: EdgeInsets.zero,
+                                hintText: context.tr(T('正文…')),
+                                hintStyle: context.reading.apply(
+                                  AppTypography.editorBody.copyWith(
+                                    color: c.textTertiary,
+                                  ),
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                              ),
                             ),
-                          ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                        ),
-                      ),
                     ),
+                    // 内联写作 AI 面板（非模态，不遮正文）
+                    if (_aiOpen)
+                      _WriteAiPanelInline(
+                        ai: widget.aiController,
+                        currentBody: _bodyCtrl.text,
+                        onInsert: (text) {
+                          _applyAiResult(text, replaceAll: false);
+                          setState(() => _aiOpen = false);
+                        },
+                        onReplaceAll: (text) {
+                          _applyAiResult(text, replaceAll: true);
+                          setState(() => _aiOpen = false);
+                        },
+                        onClose: () => setState(() => _aiOpen = false),
+                      ),
                     // 给固定显示的底部区域留高度：工具栏 46 + 状态行 44 + 底部安全区
                     SizedBox(
                       height: 46 + 44 + MediaQuery.of(context).padding.bottom,
@@ -686,17 +710,27 @@ class _EditorPageState extends State<EditorPage> {
                           _SaveIndicator(state: _saveState, error: _saveError),
                           const Spacer(),
                           TextButton.icon(
-                            onPressed: _openPreview,
-                            icon: const Icon(
-                              Icons.visibility_outlined,
+                            onPressed: _togglePreview,
+                            icon: Icon(
+                              _previewMode
+                                  ? Icons.edit_outlined
+                                  : Icons.visibility_outlined,
                               size: 16,
                             ),
-                            label: Text(context.tr(T('预览'))),
+                            label: Text(
+                              context.tr(
+                                T(_previewMode ? '编辑' : '预览'),
+                              ),
+                            ),
                           ),
                           const SizedBox(width: AppSpace.xxs),
                           TextButton.icon(
-                            onPressed: _openWriteAi,
-                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            onPressed: _toggleAi,
+                            icon: Icon(
+                              Icons.auto_awesome,
+                              size: 16,
+                              color: _aiOpen ? c.accent : null,
+                            ),
                             label: const Text('AI'),
                           ),
                         ],
@@ -712,87 +746,39 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
-  /// 预览：底部滑出 Markdown 渲染结果（占 85% 高度，可下拉关闭）。
+  /// 切换预览：正文区在「可编辑源码」与「富文本渲染」之间切换，
+/// 就地替换，不弹面板、不遮挡。再点一次切回编辑。
+  void _togglePreview() {
+    setState(() {
+      _previewMode = !_previewMode;
+      // 进预览时收起键盘，避免输入法盖住渲染内容
+      if (_previewMode) _bodyFocus.unfocus();
+    });
+  }
+
+  /// 预览正文：用 [ChatMarkdown] 就地渲染当前 Markdown。
   ///
-  /// 用 [ChatMarkdown] 而不是编辑器的高亮器：预览要的是**渲染结果**
-  /// （# 变大标题、**粗** 变粗、反引号消失），而不是给源码着色。
-  void _openPreview() {
+  /// 与编辑器正文用同一套 [ReadingPrefs]（字号/字体），所以在预览里看到的
+  /// 字号就是读者看到的字号 —— 这就是「富文本式」预览的意义。
+  Widget _buildPreviewBody(AppColors c) {
     final body = _bodyCtrl.text;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.appColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (ctx) {
-        final c = ctx.appColors;
-        return DraggableScrollableSheet(
-          initialChildSize: 0.85,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (ctx2, scrollCtrl) => Column(
-            children: [
-              // 抓手
-              Container(
-                margin: const EdgeInsets.only(top: AppSpace.xs),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: c.divider,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpace.md,
-                  AppSpace.sm,
-                  AppSpace.xs,
-                  AppSpace.xs,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      context.tr(T('预览')),
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: c.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: Icon(Icons.close, color: c.textSecondary),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, color: c.divider),
-              Expanded(
-                child: body.trim().isEmpty
-                    ? Center(
-                        child: Text(
-                          context.tr(T('正文还是空的')),
-                          style: TextStyle(color: c.textTertiary),
-                        ),
-                      )
-                    : SingleChildScrollView(
-                        controller: scrollCtrl,
-                        padding: const EdgeInsets.all(AppSpace.lg),
-                        child: ChatMarkdown(body),
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
+    if (body.trim().isEmpty) {
+      return Center(
+        child: Text(
+          context.tr(T('正文还是空的')),
+          style: TextStyle(color: c.textTertiary),
+        ),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
+      // 用读者字号渲染，预览所见即读者所见
+      child: ChatMarkdown(body, baseFontSize: context.reading.fontSize),
     );
   }
 
-  /// 写作 AI：底部面板输入指令 → 流式生成 → 可「插入到光标处 / 替换整篇」。
-  void _openWriteAi() {
+  /// 切换内联写作 AI 面板：展开/收起，不用模态遮罩。
+  void _toggleAi() {
     final ai = widget.aiController;
     if (ai == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -800,20 +786,14 @@ class _EditorPageState extends State<EditorPage> {
       );
       return;
     }
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.appColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (_) => _WriteAiSheet(
-        ai: ai,
-        currentBody: _bodyCtrl.text,
-        onInsert: (text) => _applyAiResult(text, replaceAll: false),
-        onReplaceAll: (text) => _applyAiResult(text, replaceAll: true),
-      ),
-    );
+    setState(() {
+      _aiOpen = !_aiOpen;
+      if (_aiOpen) {
+        // AI 面板要在编辑模式下用，先退出预览
+        _previewMode = false;
+        _bodyFocus.unfocus();
+      }
+    });
   }
 
   /// 把 AI 生成结果写回正文。
@@ -950,39 +930,41 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 }
+// ── 写作 AI 内联面板 ────────────────────────────────
 
-// ── 写作 AI 面板 ────────────────────────────────────
-
-/// 写作 AI 底部面板。
+/// 写作 AI 内联面板（嵌在编辑器正文下方，非模态、不遮正文）。
 ///
 /// 交互：输入指令（如「帮我写一段开头」「把这段改得更简洁」）→ 点「生成」→
 /// 流式显示结果 → 满意后点「插入到光标处」或「替换整篇」。
 ///
-/// 为什么用面板而不是新页面：写作时用户要一直看着正文，跳页会丢上下文。
-/// 面板只占下半屏，盖子一关就回到编辑器。
-class _WriteAiSheet extends StatefulWidget {
-  const _WriteAiSheet({
+/// 为什么内联而不是弹层：用户要一边看正文一边和 AI 对话，
+/// 模态遮罩会把正文整个盖住，等于蒙着眼睛改稿。
+class _WriteAiPanelInline extends StatefulWidget {
+  const _WriteAiPanelInline({
     required this.ai,
     required this.currentBody,
     required this.onInsert,
     required this.onReplaceAll,
+    required this.onClose,
   });
 
-  final AiController ai;
+  final AiController? ai;
   final String currentBody;
   final void Function(String) onInsert;
   final void Function(String) onReplaceAll;
+  final VoidCallback onClose;
 
   @override
-  State<_WriteAiSheet> createState() => _WriteAiSheetState();
+  State<_WriteAiPanelInline> createState() => _WriteAiPanelInlineState();
 }
 
-class _WriteAiSheetState extends State<_WriteAiSheet> {
+class _WriteAiPanelInlineState extends State<_WriteAiPanelInline> {
   final _inputCtrl = TextEditingController();
   final _result = StringBuffer();
   bool _running = false;
   String? _error;
   String _live = '';
+
 
   @override
   void dispose() {
@@ -993,6 +975,8 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
   Future<void> _generate() async {
     final instruction = _inputCtrl.text.trim();
     if (instruction.isEmpty) return;
+    final ai = widget.ai;
+    if (ai == null) return;
     setState(() {
       _running = true;
       _error = null;
@@ -1000,7 +984,7 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
       _live = '';
     });
     try {
-      final full = await widget.ai.composeWriting(
+      final full = await ai.composeWriting(
         instruction: instruction,
         currentBody: widget.currentBody,
         onDelta: (text) {
@@ -1032,60 +1016,52 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final output = _result.isNotEmpty ? _result.toString() : _live;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: AppSpace.xs),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.divider,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpace.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.sm,
+        AppSpace.xxs,
+        AppSpace.xs,
+        0,
+      ),
+      decoration: BoxDecoration(
+        color: c.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: c.divider),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 16, color: c.accent),
+              const SizedBox(width: AppSpace.xs),
+              Text(
+                context.tr(T('写作 AI')),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.md,
-                AppSpace.sm,
-                AppSpace.xs,
-                AppSpace.xxs,
+              const Spacer(),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, size: 18, color: c.textSecondary),
+                onPressed: _running ? null : widget.onClose,
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.auto_awesome, size: 18, color: c.accent),
-                  const SizedBox(width: AppSpace.xs),
-                  Text(
-                    context.tr(T('写作 AI')),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(Icons.close, color: c.textSecondary),
-                    onPressed: _running ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            // 输出区（流式）
+            ],
+          ),
+          // 输出区（流式）
             if (_running || output.isNotEmpty)
               Container(
-                constraints: const BoxConstraints(maxHeight: 220),
+                constraints: const BoxConstraints(maxHeight: 200),
                 width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+                margin: const EdgeInsets.symmetric(vertical: AppSpace.xs),
                 padding: const EdgeInsets.all(AppSpace.sm),
                 decoration: BoxDecoration(
-                  color: c.surfaceHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  color: c.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: SingleChildScrollView(
                   child: _running && output.isEmpty
@@ -1111,12 +1087,7 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
               ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpace.md,
-                  AppSpace.xs,
-                  AppSpace.md,
-                  0,
-                ),
+                padding: const EdgeInsets.only(bottom: AppSpace.xs),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -1127,12 +1098,7 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
               ),
             // 输入框
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.md,
-                AppSpace.sm,
-                AppSpace.md,
-                AppSpace.xs,
-              ),
+              padding: const EdgeInsets.only(bottom: AppSpace.xs, right: AppSpace.xxs),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -1143,6 +1109,7 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.newline,
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         hintText: context.tr(
                           T('告诉 AI 你想怎么写，如「帮我写一段开头」'),
@@ -1175,38 +1142,26 @@ class _WriteAiSheetState extends State<_WriteAiSheet> {
             // 结果操作
             if (output.isNotEmpty && !_running)
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpace.md,
-                  0,
-                  AppSpace.md,
-                  AppSpace.sm,
-                ),
+                padding: const EdgeInsets.only(bottom: AppSpace.xs, right: AppSpace.xxs),
                 child: Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          widget.onInsert(output);
-                          Navigator.pop(context);
-                        },
+                        onPressed: () => widget.onInsert(output),
                         child: Text(context.tr(T('插入到光标处'))),
                       ),
                     ),
                     const SizedBox(width: AppSpace.sm),
                     Expanded(
                       child: FilledButton(
-                        onPressed: () {
-                          widget.onReplaceAll(output);
-                          Navigator.pop(context);
-                        },
+                        onPressed: () => widget.onReplaceAll(output),
                         child: Text(context.tr(T('替换整篇'))),
                       ),
                     ),
                   ],
                 ),
               ),
-          ],
-        ),
+        ],
       ),
     );
   }

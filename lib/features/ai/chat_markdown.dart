@@ -26,9 +26,13 @@ import '../../app/theme/app_colors.dart';
 /// 是纯函数、开销很小（几 KB 文本），不需要额外缓存；真要优化也是
 /// 在 [ChatPage] 层按「是否仍在流式」决定，而不是在这里藏状态。
 class ChatMarkdown extends StatelessWidget {
-  const ChatMarkdown(this.markup, {super.key});
+  const ChatMarkdown(this.markup, {super.key, this.baseFontSize = 14});
 
   final String markup;
+
+  /// 正文字号。默认 14 是 AI 对话用的；编辑器预览可传入读者字号，
+  /// 让预览所见即读者所得。
+  final double baseFontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +40,7 @@ class ChatMarkdown extends StatelessWidget {
 
     final text = markup.trim();
     if (text.isEmpty) {
-      return Text('…', style: TextStyle(fontSize: 14, color: c.textTertiary));
+      return Text('…', style: TextStyle(fontSize: baseFontSize, color: c.textTertiary));
     }
 
     // 只解析不渲染 HTML：encodeHtml 反而会把 < > 变成实体，
@@ -47,10 +51,14 @@ class ChatMarkdown extends StatelessWidget {
     );
 
     final nodes = doc.parse(text);
-    final blocks = _MdRenderer(context: context, colors: c).renderBlocks(nodes);
+    final blocks = _MdRenderer(
+      context: context,
+      colors: c,
+      baseFontSize: baseFontSize,
+    ).renderBlocks(nodes);
 
     if (blocks.isEmpty) {
-      return Text(text, style: TextStyle(fontSize: 14, color: c.textPrimary));
+      return Text(text, style: TextStyle(fontSize: baseFontSize, color: c.textPrimary));
     }
 
     return Column(
@@ -69,12 +77,13 @@ class ChatMarkdown extends StatelessWidget {
 /// 这样做的原因：块与块之间需要真实间距和外框（比如代码块的背景），
 /// 而行内元素如果各自成 Widget 就无法正确换行。
 class _MdRenderer {
-  _MdRenderer({required this.context, required this.colors});
+  _MdRenderer({required this.context, required this.colors, this.baseFontSize = 14});
 
   final BuildContext context;
   final AppColors colors;
+  final double baseFontSize;
 
-  static const double _baseFontSize = 14;
+  double get _baseFontSize => baseFontSize;
   static const double _baseline = 1.7;
 
   TextStyle get _base => TextStyle(
