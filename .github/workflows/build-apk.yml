@@ -38,6 +38,22 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "ndk;28.2.13676358"
 
+      - name: Patch build config for x86_64 CI runner
+        run: |
+          # 本仓库 android/ 的构建配置是为「本地 ARM64 / proot」定制的：
+          #   1) gradle.properties 的 android.aapt2FromMavenOverride 指向本地
+          #      aarch64 版 aapt2 的绝对路径（/root/Android/...），CI 上不存在；
+          #   2) settings.gradle.kts / build.gradle.kts 把阿里云、华为云 Maven
+          #      镜像放在最前，境外 runner 访问这些镜像会失败，导致依赖解析不到。
+          # GitHub 的 ubuntu runner 是 x86_64 且能直连 google()/mavenCentral()，
+          # 所以仅在 CI 运行时临时移除这些定制，不提交回仓库、不影响本地构建。
+          sed -i '/aapt2FromMavenOverride/d' android/gradle.properties
+          sed -i '/aliyun\.com\|huaweicloud\.com/d' android/settings.gradle.kts
+          sed -i '/aliyun\.com\|huaweicloud\.com/d' android/build.gradle.kts
+          echo '===== gradle.properties ====='; cat android/gradle.properties
+          echo '===== settings.gradle.kts ====='; cat android/settings.gradle.kts
+          echo '===== build.gradle.kts ====='; cat android/build.gradle.kts
+
       - name: flutter pub get
         run: flutter pub get
 
