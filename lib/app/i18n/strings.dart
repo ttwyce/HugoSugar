@@ -490,7 +490,6 @@ const Map<String, L10nEntry> kStrings = {
     en: 'Save failed — check the status at the bottom',
   ),
   '保存并重发': (zh: '保存并重发', en: 'Save and resend'),
-  '写作 AI 在 M5 提供': (zh: '写作 AI 在 M5 提供', en: 'Writing AI arrives in M5'),
   '写入': (zh: '写入', en: 'Write'),
   '写给模型看的要求，越具体越好。\n': (
     zh: '写给模型看的要求，越具体越好。\n',
@@ -563,10 +562,6 @@ const Map<String, L10nEntry> kStrings = {
     en: 'This post is still loading — try again later',
   ),
   '重新读取变更': (zh: '重新读取变更', en: 'Reload changes'),
-  '预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对': (
-    zh: '预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对',
-    en: 'Preview arrives after M4; for now verify via Front Matter + body',
-  ),
 
   // ── 自动补齐（页面文案）──
   'AI 读取想法的范围': (zh: 'AI 读取想法的范围', en: 'AI note reading scope'),
@@ -1006,21 +1001,8 @@ const Map<String, L10nEntry> kStrings = {
   ),
   '这段对话写过 {} 个文件：': (zh: '这段对话写过 {} 个文件：', en: 'This chat wrote {} files:'),
 
-  // ── 编辑器预览 / 写作 AI ──
+  // ── 编辑器预览 ──
   '正文还是空的': (zh: '正文还是空的', en: 'The body is empty'),
-  '写作 AI': (zh: '写作 AI', en: 'Writing AI'),
-  '写作 AI 未接入（缺少 AI 控制器）': (
-    zh: '写作 AI 未接入（缺少 AI 控制器）',
-    en: 'Writing AI is not connected (missing AI controller)',
-  ),
-  '告诉 AI 你想怎么写，如「帮我写一段开头」': (
-    zh: '告诉 AI 你想怎么写，如「帮我写一段开头」',
-    en: 'Tell the AI how to write, e.g. "Write an opening paragraph for me"',
-  ),
-  '生成': (zh: '生成', en: 'Generate'),
-  '生成中…': (zh: '生成中…', en: 'Generating…'),
-  '插入到光标处': (zh: '插入到光标处', en: 'Insert at cursor'),
-  '替换整篇': (zh: '替换整篇', en: 'Replace all'),
 };
 
 /// 取文案。

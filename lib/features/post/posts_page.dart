@@ -6,7 +6,6 @@ import '../../core/post/front_matter.dart';
 import '../../core/post/post_transfer.dart';
 import '../../core/post/post_transfer_service.dart';
 import '../../core/site/site_controller.dart';
-import '../../core/ai/ai_controller.dart';
 import '../../shared/widgets.dart';
 import '../editor/editor_page.dart';
 import '../push/push_page.dart';
@@ -21,12 +20,9 @@ enum _Filter { all, drafts, published }
 /// M2：标题、摘要、日期、分类、标签全部来自 Front Matter，
 /// 不再用文件名占位。
 class PostsPage extends StatefulWidget {
-  const PostsPage({super.key, required this.siteController, this.aiController});
+  const PostsPage({super.key, required this.siteController});
 
   final SiteController siteController;
-
-  /// 传给编辑器用于「写作 AI」；可空（缺省时编辑器 AI 按钮提示未接入）。
-  final AiController? aiController;
 
   @override
   State<PostsPage> createState() => _PostsPageState();
@@ -429,7 +425,6 @@ class _PostsPageState extends State<PostsPage> {
           title: post.title,
           relativePath: post.relativePath,
           controller: widget.siteController,
-          aiController: widget.aiController,
         ),
       ),
     );

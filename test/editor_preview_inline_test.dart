@@ -40,13 +40,9 @@ void main() {
     expect(find.text('预览'), findsOneWidget);
   });
 
-  testWidgets('没有 AI 控制器时点 AI 只提示、不弹路由', (tester) async {
+  testWidgets('编辑器不再有 AI 按钮', (tester) async {
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('AI'));
-    await tester.pump(); // SnackBar 出现
-
-    expect(find.textContaining('写作 AI 未接入'), findsOneWidget);
+    expect(find.text('AI'), findsNothing);
   });
 }

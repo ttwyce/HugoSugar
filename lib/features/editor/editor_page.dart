@@ -9,8 +9,6 @@ import '../../app/theme/reading_prefs.dart';
 import '../../core/edit/undo_history.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
-import '../../core/ai/ai_controller.dart';
-import '../../core/ai/ai_client.dart';
 import '../ai/chat_markdown.dart';
 import 'markdown_highlighter.dart';
 import '../../shared/chip_editor.dart';
@@ -34,7 +32,6 @@ class EditorPage extends StatefulWidget {
     required this.title,
     this.relativePath,
     this.controller,
-    this.aiController,
   });
 
   final String title;
@@ -44,9 +41,6 @@ class EditorPage extends StatefulWidget {
 
   /// 用来读写文件；为空时编辑器不落盘
   final SiteController? controller;
-
-  /// 写作 AI。为空时「AI」按钮提示未接入（理论上主流程都会传入）。
-  final AiController? aiController;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -90,9 +84,6 @@ class _EditorPageState extends State<EditorPage> {
   /// 预览模式：正文区从「可编辑源码」切换成「富文本渲染」，留在编辑器内，
   /// 不弹面板、不遮正文。再点一次切回编辑。
   bool _previewMode = false;
-
-  /// 写作 AI 面板是否内联展开（贴在底部工具栏上方，不用模态遮罩）。
-  bool _aiOpen = false;
 
   @override
   void initState() {
@@ -583,21 +574,6 @@ class _EditorPageState extends State<EditorPage> {
                               ),
                             ),
                     ),
-                    // 内联写作 AI 面板（非模态，不遮正文）
-                    if (_aiOpen)
-                      _WriteAiPanelInline(
-                        ai: widget.aiController,
-                        currentBody: _bodyCtrl.text,
-                        onInsert: (text) {
-                          _applyAiResult(text, replaceAll: false);
-                          setState(() => _aiOpen = false);
-                        },
-                        onReplaceAll: (text) {
-                          _applyAiResult(text, replaceAll: true);
-                          setState(() => _aiOpen = false);
-                        },
-                        onClose: () => setState(() => _aiOpen = false),
-                      ),
                     // 给固定显示的底部区域留高度：工具栏 46 + 状态行 44 + 底部安全区
                     SizedBox(
                       height: 46 + 44 + MediaQuery.of(context).padding.bottom,
@@ -709,6 +685,7 @@ class _EditorPageState extends State<EditorPage> {
                           const SizedBox(width: AppSpace.xs),
                           _SaveIndicator(state: _saveState, error: _saveError),
                           const Spacer(),
+                          const SizedBox(width: AppSpace.xxs),
                           TextButton.icon(
                             onPressed: _togglePreview,
                             icon: Icon(
@@ -722,16 +699,6 @@ class _EditorPageState extends State<EditorPage> {
                                 T(_previewMode ? '编辑' : '预览'),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AppSpace.xxs),
-                          TextButton.icon(
-                            onPressed: _toggleAi,
-                            icon: Icon(
-                              Icons.auto_awesome,
-                              size: 16,
-                              color: _aiOpen ? c.accent : null,
-                            ),
-                            label: const Text('AI'),
                           ),
                         ],
                       ),
@@ -775,49 +742,6 @@ class _EditorPageState extends State<EditorPage> {
       // 用读者字号渲染，预览所见即读者所见
       child: ChatMarkdown(body, baseFontSize: context.reading.fontSize),
     );
-  }
-
-  /// 切换内联写作 AI 面板：展开/收起，不用模态遮罩。
-  void _toggleAi() {
-    final ai = widget.aiController;
-    if (ai == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr(T('写作 AI 未接入（缺少 AI 控制器）')))),
-      );
-      return;
-    }
-    setState(() {
-      _aiOpen = !_aiOpen;
-      if (_aiOpen) {
-        // AI 面板要在编辑模式下用，先退出预览
-        _previewMode = false;
-        _bodyFocus.unfocus();
-      }
-    });
-  }
-
-  /// 把 AI 生成结果写回正文。
-  ///
-  /// [replaceAll] 为 true 时整篇替换；否则插入到当前光标处。
-  /// 只是改文本，会自动触发自动保存 —— 不需要额外手动保存。
-  void _applyAiResult(String text, {required bool replaceAll}) {
-    if (replaceAll) {
-      _bodyCtrl.value = TextEditingValue(
-        text: text,
-        selection: TextSelection.collapsed(offset: text.length),
-      );
-      return;
-    }
-    final sel = _bodyCtrl.selection;
-    final src = _bodyCtrl.text;
-    final at = sel.isValid ? sel.start : src.length;
-    final end = sel.isValid ? sel.end : src.length;
-    final newText = src.replaceRange(at, end, text);
-    _bodyCtrl.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: at + text.length),
-    );
-    _bodyFocus.requestFocus();
   }
 
   /// 文章信息面板
@@ -928,242 +852,6 @@ class _EditorPageState extends State<EditorPage> {
         SnackBar(content: Text(TP('删除失败：{}', [ctrl.error ?? "未知错误"]))),
       );
     }
-  }
-}
-// ── 写作 AI 内联面板 ────────────────────────────────
-
-/// 写作 AI 内联面板（嵌在编辑器正文下方，非模态、不遮正文）。
-///
-/// 交互：输入指令（如「帮我写一段开头」「把这段改得更简洁」）→ 点「生成」→
-/// 流式显示结果 → 满意后点「插入到光标处」或「替换整篇」。
-///
-/// 为什么内联而不是弹层：用户要一边看正文一边和 AI 对话，
-/// 模态遮罩会把正文整个盖住，等于蒙着眼睛改稿。
-class _WriteAiPanelInline extends StatefulWidget {
-  const _WriteAiPanelInline({
-    required this.ai,
-    required this.currentBody,
-    required this.onInsert,
-    required this.onReplaceAll,
-    required this.onClose,
-  });
-
-  final AiController? ai;
-  final String currentBody;
-  final void Function(String) onInsert;
-  final void Function(String) onReplaceAll;
-  final VoidCallback onClose;
-
-  @override
-  State<_WriteAiPanelInline> createState() => _WriteAiPanelInlineState();
-}
-
-class _WriteAiPanelInlineState extends State<_WriteAiPanelInline> {
-  final _inputCtrl = TextEditingController();
-  final _result = StringBuffer();
-  bool _running = false;
-  String? _error;
-  String _live = '';
-
-
-  @override
-  void dispose() {
-    _inputCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _generate() async {
-    final instruction = _inputCtrl.text.trim();
-    if (instruction.isEmpty) return;
-    final ai = widget.ai;
-    if (ai == null) return;
-    setState(() {
-      _running = true;
-      _error = null;
-      _result.clear();
-      _live = '';
-    });
-    try {
-      final full = await ai.composeWriting(
-        instruction: instruction,
-        currentBody: widget.currentBody,
-        onDelta: (text) {
-          if (!mounted) return;
-          setState(() => _live = text);
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _result.write(full);
-        _running = false;
-      });
-    } on AiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.message;
-        _running = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = '$e';
-        _running = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.appColors;
-    final output = _result.isNotEmpty ? _result.toString() : _live;
-    return Container(
-      margin: const EdgeInsets.only(top: AppSpace.xs),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.sm,
-        AppSpace.xxs,
-        AppSpace.xs,
-        0,
-      ),
-      decoration: BoxDecoration(
-        color: c.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: c.divider),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.auto_awesome, size: 16, color: c.accent),
-              const SizedBox(width: AppSpace.xs),
-              Text(
-                context.tr(T('写作 AI')),
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: c.textPrimary,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.close, size: 18, color: c.textSecondary),
-                onPressed: _running ? null : widget.onClose,
-              ),
-            ],
-          ),
-          // 输出区（流式）
-            if (_running || output.isNotEmpty)
-              Container(
-                constraints: const BoxConstraints(maxHeight: 200),
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(vertical: AppSpace.xs),
-                padding: const EdgeInsets.all(AppSpace.sm),
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                ),
-                child: SingleChildScrollView(
-                  child: _running && output.isEmpty
-                      ? Row(
-                          children: [
-                            SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: c.accent,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpace.xs),
-                            Text(
-                              context.tr(T('生成中…')),
-                              style: TextStyle(color: c.textTertiary),
-                            ),
-                          ],
-                        )
-                      : ChatMarkdown(output),
-                ),
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpace.xs),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _error!,
-                    style: TextStyle(fontSize: 12, color: c.danger),
-                  ),
-                ),
-              ),
-            // 输入框
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpace.xs, right: AppSpace.xxs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _inputCtrl,
-                      enabled: !_running,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: context.tr(
-                          T('告诉 AI 你想怎么写，如「帮我写一段开头」'),
-                        ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: AppSpace.sm,
-                          vertical: AppSpace.sm,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpace.xs),
-                  FilledButton(
-                    onPressed: _running ? null : _generate,
-                    child: _running
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(context.tr(T('生成'))),
-                  ),
-                ],
-              ),
-            ),
-            // 结果操作
-            if (output.isNotEmpty && !_running)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpace.xs, right: AppSpace.xxs),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => widget.onInsert(output),
-                        child: Text(context.tr(T('插入到光标处'))),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpace.sm),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => widget.onReplaceAll(output),
-                        child: Text(context.tr(T('替换整篇'))),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-        ],
-      ),
-    );
   }
 }
 
