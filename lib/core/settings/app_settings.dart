@@ -70,6 +70,8 @@ class AppSettings {
     this.authorEmail = '',
     this.aiReadNotes = false,
     this.aiNoteCategoryIds = const [],
+    this.aiSystemPrompt = '',
+    this.aiMaxTokensPerRound = 120000,
   });
 
   final DateFormatStyle dateFormat;
@@ -109,6 +111,16 @@ class AppSettings {
   /// 因为用户主动勾选了它们，意图是明确的。
   final List<String> aiNoteCategoryIds;
 
+  /// 用户自定义的 System Prompt。
+  ///
+  /// 空串 = 用 [kDefaultSystemPrompt]。
+  /// 用「空串表示未覆盖」而不是「存一份副本」的原因：
+  /// 默认值将来改进时，没改过 Prompt 的用户能自动受益。
+  final String aiSystemPrompt;
+
+  /// 单轮 token 上限（规格：由配置决定）。
+  final int aiMaxTokensPerRound;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
@@ -116,6 +128,8 @@ class AppSettings {
     String? authorEmail,
     bool? aiReadNotes,
     List<String>? aiNoteCategoryIds,
+    String? aiSystemPrompt,
+    int? aiMaxTokensPerRound,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
@@ -124,6 +138,8 @@ class AppSettings {
       authorEmail: authorEmail ?? this.authorEmail,
       aiReadNotes: aiReadNotes ?? this.aiReadNotes,
       aiNoteCategoryIds: aiNoteCategoryIds ?? this.aiNoteCategoryIds,
+      aiSystemPrompt: aiSystemPrompt ?? this.aiSystemPrompt,
+      aiMaxTokensPerRound: aiMaxTokensPerRound ?? this.aiMaxTokensPerRound,
     );
   }
 
@@ -134,6 +150,8 @@ class AppSettings {
         'authorEmail': authorEmail,
         'aiReadNotes': aiReadNotes,
         'aiNoteCategoryIds': aiNoteCategoryIds,
+        'aiSystemPrompt': aiSystemPrompt,
+        'aiMaxTokensPerRound': aiMaxTokensPerRound,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -144,6 +162,11 @@ class AppSettings {
         aiReadNotes: j['aiReadNotes'] as bool? ?? false,
         aiNoteCategoryIds:
             (j['aiNoteCategoryIds'] as List?)?.cast<String>() ?? const [],
+        aiSystemPrompt: j['aiSystemPrompt'] as String? ?? '',
+        // 旧版本文件里没有这个字段，回落到默认值而不是 0 ——
+        // 0 会让第一轮请求立刻判定「超限」
+        aiMaxTokensPerRound:
+            (j['aiMaxTokensPerRound'] as num?)?.toInt() ?? 120000,
       );
 }
 
@@ -158,6 +181,8 @@ abstract class SettingsControllerLike {
   String get authorEmail;
   bool get aiReadNotes;
   List<String> get aiNoteCategoryIds;
+  String get aiSystemPrompt;
+  int get aiMaxTokensPerRound;
 }
 
 /// 读写 `settings.json`。

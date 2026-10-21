@@ -32,6 +32,12 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   @override
   List<String> get aiNoteCategoryIds => _value.aiNoteCategoryIds;
 
+  @override
+  String get aiSystemPrompt => _value.aiSystemPrompt;
+
+  @override
+  int get aiMaxTokensPerRound => _value.aiMaxTokensPerRound;
+
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
     if (store != null) _store = store;
@@ -84,6 +90,30 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
       return;
     }
     _value = _value.copyWith(aiNoteCategoryIds: List.of(ids));
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 设置自定义 System Prompt。
+  ///
+  /// 传空串表示「恢复默认」—— 存空串而不是存默认值副本，
+  /// 这样以后改进默认 Prompt 时，没改过的用户能自动用上新的。
+  Future<void> setAiSystemPrompt(String prompt) async {
+    final v = prompt.trim().isEmpty ? '' : prompt;
+    if (_value.aiSystemPrompt == v) return;
+    _value = _value.copyWith(aiSystemPrompt: v);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 单轮 token 上限。
+  ///
+  /// 下限保护 1000：设成 0 或负数会让第一轮请求立刻判定超限，
+  /// 用户只会看到「本轮 token 已用 0，超过上限 0」这种费解提示。
+  Future<void> setAiMaxTokensPerRound(int tokens) async {
+    final v = tokens < 1000 ? 1000 : tokens;
+    if (_value.aiMaxTokensPerRound == v) return;
+    _value = _value.copyWith(aiMaxTokensPerRound: v);
     notifyListeners();
     await _store?.save(_value);
   }

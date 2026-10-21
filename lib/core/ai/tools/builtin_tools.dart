@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../../note/note.dart';
 import 'ai_tool.dart';
 import 'html_text.dart';
+import 'page_decoder.dart';
 import 'path_guard.dart';
 
 /// 抓取网页正文并转成纯文本。
@@ -91,7 +91,7 @@ class UrlFetcher {
         throw FetchError('这个地址不是网页（$contentType），无法读取');
       }
 
-      final body = utf8.decode(bytes, allowMalformed: true);
+      final body = PageDecoder.decode(bytes, contentType: contentType);
       final isHtml = contentType.contains('html') ||
           body.trimLeft().toLowerCase().startsWith('<!doctype') ||
           body.trimLeft().toLowerCase().startsWith('<html');

@@ -68,6 +68,8 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
     final ai = AiController(
       noteController: notes,
       siteController: _siteController,
+      // 让 AI 能读到用户自定义的 System Prompt 与 token 上限
+      settings: _settingsController,
     );
     await ai.init();
 

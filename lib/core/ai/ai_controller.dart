@@ -6,6 +6,7 @@ import 'package:path/path.dart' as pkg;
 
 import '../note/note.dart';
 import '../note/note_controller.dart';
+import '../settings/app_settings.dart';
 import '../site/site_controller.dart';
 import 'agent_runner.dart';
 import 'ai_client.dart';
@@ -13,6 +14,7 @@ import 'ai_endpoint.dart';
 import 'cancel_token.dart';
 import 'context_compressor.dart';
 import 'chat_store.dart';
+import 'default_prompt.dart';
 import 'note_context.dart';
 import 'tools/ai_tool.dart';
 import 'tools/builtin_tools.dart';
@@ -26,11 +28,18 @@ class AiController extends ChangeNotifier {
     AiClient? client,
     this.noteController,
     this.siteController,
+    this.settings,
   }) : _client = client ?? AiClient();
 
   final AiClient _client;
   final NoteController? noteController;
   final SiteController? siteController;
+
+  /// 读取用户偏好（自定义 System Prompt、token 上限）。
+  ///
+  /// 用接口 [SettingsControllerLike] 而不是具体实现，
+  /// 是为了让 core/ai 不必 import features 层的设置控制器。
+  final SettingsControllerLike? settings;
 
   AiEndpointStore? _endpointStore;
   AiKeyStore? _keyStore;
@@ -398,6 +407,8 @@ class AiController extends ChangeNotifier {
       client: _client,
       tools: tools,
       readPost: _readPostContent,
+      // 规格：单轮 token 上限「由配置决定」，不是写死的常量
+      maxTokensPerRound: settings?.aiMaxTokensPerRound ?? 120000,
     );
 
     final streamed = StringBuffer();
@@ -649,20 +660,14 @@ class AiController extends ChangeNotifier {
     _session = updated;
     await _chatStore?.save(updated);
   }
-
-  String _buildSystemPrompt() {
+String _buildSystemPrompt() {
     final buf = StringBuffer();
-    buf.writeln('你是 HugoSugar 的写作助手，帮用户把零散想法整理成能发布的 Hugo 文章。');
+    // 决议 5：用户覆盖优先，没有覆盖才用内置默认。
+    // 空串表示「未覆盖」而不是「用空 Prompt」—— 后者会让模型完全
+    // 失去角色约束，但那几乎不可能是用户想要的。
+    final custom = settings?.aiSystemPrompt.trim() ?? '';
+    buf.writeln(custom.isEmpty ? kDefaultSystemPrompt.trim() : custom);
     buf.writeln();
-    buf.writeln('规则：');
-    buf.writeln('- 写文章前先调用 list_notes / search_notes 了解用户想法，'
-        '用 read_post 学习已有文章的格式和文风。');
-    buf.writeln('- 写入用 write_post，内容必须含完整 Front Matter'
-        '（至少 title、date）。用户会审阅 Diff，可能拒绝。');
-    buf.writeln('- fetch_url 仅在用户明确给出网址、或需要查证具体文档时使用。'
-        '不要主动联网搜索，不要连续抓取同一网站的多个页面。');
-    buf.writeln('- 不要重复写入同一个文件；用户拒绝后不要换个路径重试。');
-    buf.writeln('- 回答用中文，简洁直接。');
 
     // 注入想法上下文
     final nc = noteController;

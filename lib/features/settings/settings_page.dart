@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/ai/default_prompt.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
@@ -60,6 +61,136 @@ class _SettingsPageState extends State<SettingsPage> {
     if (name.isEmpty && email.isEmpty) return '自动（跟随 GitHub 账号）';
     if (email.isEmpty) return '$name · 邮箱自动推断';
     return '${name.isEmpty ? "名称自动" : name} · $email';
+  }
+
+  /// 编辑 System Prompt。
+  ///
+  /// 规格要求「可查看、修改、一键恢复默认」——
+  /// 恢复默认的做法是把覆盖值清空（存空串），
+  /// 而不是把默认值复制一份存进去。
+  Future<void> _editSystemPrompt() async {
+    final sc = widget.settingsController;
+    final ctrl = TextEditingController(
+      text: sc.aiSystemPrompt.trim().isEmpty
+          ? kDefaultSystemPrompt
+          : sc.aiSystemPrompt,
+    );
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('System Prompt'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '决定 AI 的角色、文章规范与行为边界。'
+                '「恢复默认」会丢弃你的修改。',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: ctx.appColors.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 340),
+                child: TextField(
+                  controller: ctrl,
+                  maxLines: null,
+                  minLines: 10,
+                  style: const TextStyle(fontSize: 13, height: 1.5),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('reset'),
+            child: const Text('恢复默认'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    ctrl.dispose();
+    if (action == null) return;
+    await sc.setAiSystemPrompt(action == 'reset' ? '' : action);
+    if (mounted) setState(() {});
+  }
+
+  /// 编辑单轮 token 上限
+  Future<void> _editMaxTokens() async {
+    final sc = widget.settingsController;
+    final ctrl = TextEditingController(text: '${sc.aiMaxTokensPerRound}');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('单轮 token 上限'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '一次回答里累计超过这个数就中止，防止长对话烧掉大量额度。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: ctx.appColors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+                suffixText: 'tokens',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) {
+      ctrl.dispose();
+      return;
+    }
+    final v = int.tryParse(ctrl.text.trim());
+    ctrl.dispose();
+    if (v != null) {
+      await sc.setAiMaxTokensPerRound(v);
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _editAuthor() async {
@@ -235,9 +366,26 @@ class _SettingsPageState extends State<SettingsPage> {
           ListTile(
             leading: const Icon(Icons.tune),
             title: const Text('System Prompt'),
-            subtitle: const Text('使用默认模板'),
+            subtitle: Text(
+              widget.settingsController.aiSystemPrompt.trim().isEmpty
+                  ? '使用默认模板'
+                  : '已自定义（${widget.settingsController.aiSystemPrompt.length} 字）',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
             trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () {},
+            onTap: _editSystemPrompt,
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.speed),
+            title: const Text('单轮 token 上限'),
+            subtitle: Text(
+              '${widget.settingsController.aiMaxTokensPerRound}'
+              '（超过即中止本轮）',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _editMaxTokens,
           ),
 
           const SectionHeader('关于'),
