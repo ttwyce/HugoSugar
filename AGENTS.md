@@ -243,6 +243,26 @@ grep -E 'Built |FAILURE|rror:' build.log
 > **Android/iOS 完全不可用**，选错会卡死在 M0 第一步。
 > 当前实际使用 `git2dart: ^0.5.6`，以 `pubspec.yaml` 为准。
 
+### 纯 Dart 依赖（无原生构建风险）
+
+项目里所有依赖都必须是**纯 Dart**。带原生插件的包会重新引入 NDK/CMake 问题。
+
+| 包 | 用途 | 备注 |
+|---|---|---|
+| `markdown` ^7.3.1 | AI 回复渲染 | Dart 官方维护；只取 AST，自绘 Widget |
+| `fast_gbk` ^1.0.0 | GBK/GB2312 解码 | 网页抓取用；`environment: sdk >=2.12`，无 `flutter.plugin` 段 |
+| `yaml` ^3.1.2 | Front Matter | — |
+| `http` ^1.2.1 | GitHub API / AI 端点 | — |
+
+> ⚠️ **不要用 `flutter_markdown`**。它会拖进一堆渲染层依赖，在 ARM64 proot 下
+> 曾多次引发构建问题。需要 Markdown 渲染时看 `lib/features/ai/chat_markdown.dart`
+> 的做法：用 `markdown` 解析 AST，自己画 Widget，主题色完全可控。
+>
+> ⚠️ **网页解码不要无脑 `utf8.decode(allowMalformed: true)`**。
+> 它不抛异常，而是把非 UTF-8 字节静默替换成 `�`，
+> 结果是「不报错但全是乱码」——比直接失败更难查。
+> 统一走 `lib/core/ai/tools/page_decoder.dart` 的 `PageDecoder.decode()`。
+
 ---
 
 ## 6. 排错方法论（核心）

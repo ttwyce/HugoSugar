@@ -143,7 +143,12 @@ class _ChatPageState extends State<ChatPage> {
                             if (i < entries.length) {
                               return _EntryView(
                                 entry: entries[i],
+                                busy: ctrl.busy,
                                 onRollback: () => _rollback(entries[i]),
+                                onRecall: () => _recall(entries[i]),
+                                onResend: () => _resend(entries[i]),
+                                onEdit: () => _editEntry(entries[i]),
+                                onDelete: () => _deleteEntry(entries[i]),
                               );
                             }
                             return _StreamingBubble(
@@ -208,19 +213,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final started = await widget.controller.send(
       text,
-      onApproval: (req) async {
-        if (!mounted) return ApprovalDecision.reject;
-        final result = await showModalBottomSheet<ApprovalDecision>(
-          context: context,
-          isScrollControlled: true,
-          // 写盘的确认不允许点外部关闭：误触等于默认拒绝，
-          // 但用户会以为「点了就写了」，反而更困惑
-          isDismissible: false,
-          enableDrag: false,
-          builder: (_) => WriteApprovalSheet(request: req),
-        );
-        return result ?? ApprovalDecision.reject;
-      },
+      onApproval: _askApproval,
     );
 
     // send 还有一道 validateSend 覆盖不到的检查：API Key 是异步读的。
@@ -304,6 +297,256 @@ class _ChatPageState extends State<ChatPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(done ? '已恢复' : '撤销失败')),
     );
+  }
+
+  /// 撤回：先算出「会被删掉的消息里一共涉及哪些文件」，
+  /// 再让用户决定是否一并回滚。
+  ///
+  /// 为什么要先算文件：用户看不到 backups 的存在，
+  /// 如果只问「要回滚文件吗」，他根本不知道会动哪些文件。
+  Future<void> _recall(ChatEntry entry) async {
+    final ctrl = widget.controller;
+    final session = ctrl.session;
+    if (session == null) return;
+
+    final idx = session.entries.indexOf(entry);
+    if (idx < 0) return;
+
+    // user 消息撤回「这条及之后」，assistant 消息只撤回「这条」
+    final isUser = entry.isUser;
+    final removed = isUser ? session.entries.sublist(idx) : [entry];
+
+    final files = <String>{
+      for (final e in removed)
+        for (final b in e.backups) b.relPath,
+    };
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('撤回对话'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isUser
+                  ? '将删除这条提问及其之后的 ${removed.length} 条消息。'
+                  : '将只删除这条回复，上面的提问会保留。',
+              style: const TextStyle(fontSize: 13, height: 1.5),
+            ),
+            if (files.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                '这段对话写过 ${files.length} 个文件：',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: ctx.appColors.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final f in files)
+                        Text(
+                          '· $f',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('取消'),
+          ),
+          if (files.isNotEmpty)
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('keep'),
+              child: const Text('只删对话'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('rollback'),
+            child: Text(files.isEmpty ? '撤回' : '对话和文件一起回滚'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    final rolledBack = await ctrl.recallFromEntry(
+      entry,
+      rollbackFiles: choice == 'rollback',
+      single: !isUser,
+    );
+    if (!mounted) return;
+
+    if (rolledBack < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('撤回失败')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          choice == 'rollback' && rolledBack > 0
+              ? '已撤回对话，并恢复 $rolledBack 个文件'
+              : '已撤回对话',
+        ),
+      ),
+    );
+  }
+
+  /// 原样重发。
+  ///
+  /// 和「编辑后重发」分开问，因为这里的 diff 是零 ——
+  /// 用户想要的只是「同样的问法，让模型再答一次」。
+  Future<void> _resend(ChatEntry entry) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新发送'),
+        content: const Text(
+          '会撤回这条提问及其后的全部对话，然后原样再问一次。\n'
+          '这段对话写过的文件会一并回滚。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('重发'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    await widget.controller.resend(entry, onApproval: _askApproval);
+    if (mounted) setState(() {});
+  }
+
+  /// 编辑用户消息后重发。
+  Future<void> _editEntry(ChatEntry entry) async {
+    final ctrl = TextEditingController(text: entry.text);
+
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑后重发'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '保存后会撤回这条及之后的对话，并回滚相关文件，再按新内容提问。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: ctx.appColors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: TextField(
+                controller: ctrl,
+                maxLines: null,
+                minLines: 4,
+                autofocus: true,
+                style: const TextStyle(fontSize: 14, height: 1.6),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text),
+            child: const Text('保存并重发'),
+          ),
+        ],
+      ),
+    );
+
+    ctrl.dispose();
+    if (newText == null) return;
+    if (newText.trim().isEmpty) return;
+    if (newText.trim() == entry.text.trim()) {
+      // 内容没变就别白白回滚文件
+      await _resend(entry);
+      return;
+    }
+
+    await widget.controller.editAndResend(
+      entry,
+      newText,
+      onApproval: _askApproval,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _deleteEntry(ChatEntry entry) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除这条'),
+        content: const Text('只从对话里移除，不改动任何文件。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: context.appColors.danger,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.controller.deleteEntry(entry);
+    if (mounted) setState(() {});
+  }
+
+  /// 写盘审批回调抽出来，供 send / resend / editAndResend 共用。
+  Future<ApprovalDecision?> _askApproval(ApprovalRequest req) async {
+    if (!mounted) return ApprovalDecision.reject;
+    final result = await showModalBottomSheet<ApprovalDecision>(
+      context: context,
+      isScrollControlled: true,
+      // 写盘的确认不允许点外部关闭：误触等于默认拒绝，
+      // 但用户会以为「点了就写了」，反而更困惑
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) => WriteApprovalSheet(request: req),
+    );
+    return result ?? ApprovalDecision.reject;
   }
 }
 
@@ -401,17 +644,33 @@ class _EmptyChat extends StatelessWidget {
 }
 
 class _EntryView extends StatelessWidget {
-  const _EntryView({required this.entry, required this.onRollback});
+  const _EntryView({
+    required this.entry,
+    required this.onRollback,
+    required this.onRecall,
+    required this.onResend,
+    required this.onEdit,
+    required this.onDelete,
+    required this.busy,
+  });
 
   final ChatEntry entry;
   final VoidCallback onRollback;
+  final VoidCallback onRecall;
+  final VoidCallback onResend;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  /// 生成中时禁用一切改写操作：
+  /// 撤回/重发会把正在进行的那一轮的上下文抽走。
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
     final isUser = entry.isUser;
 
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Column(
         crossAxisAlignment:
@@ -446,6 +705,113 @@ class _EntryView extends StatelessWidget {
             // 消息画不出来（用户看到的现象就是「发的消息不显示」）。
             _body(context, entry),
         ],
+      ),
+    );
+
+    if (busy) return row;
+
+    // 长按弹菜单。不带「点按」—— 点消息体应该还能选中文字，
+    // 加 onTap 会和文本选择手势打架。
+    return GestureDetector(
+      onLongPress: () => _showActions(context),
+      behavior: HitTestBehavior.translucent,
+      child: row,
+    );
+  }
+
+  void _showActions(BuildContext context) {
+    final c = context.appColors;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        child: SizedBox(
+          width: MediaQuery.sizeOf(sheetCtx).width,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.md,
+                  AppSpace.md,
+                  AppSpace.md,
+                  AppSpace.xs,
+                ),
+                child: Text(
+                  entry.isUser ? '这条提问' : '这条回复',
+                  style: TextStyle(fontSize: 11, color: c.textTertiary),
+                ),
+              ),
+              if (entry.isUser) ...[
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined, size: 20),
+                  title: const Text('编辑后重发'),
+                  subtitle: Text(
+                    '改完会撤回这条及之后的对话，并回滚相关文件',
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    onEdit();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.refresh, size: 20),
+                  title: const Text('原样重发'),
+                  subtitle: Text(
+                    '撤回这条及之后，再问一次',
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    onResend();
+                  },
+                ),
+              ],
+              // 撤回：user 消息撤回「这条之后」；assistant 消息撤回「这条」
+              ListTile(
+                leading: const Icon(Icons.history_toggle_off, size: 20),
+                title: Text(entry.isUser ? '撤回这条及之后' : '撤回这条'),
+                subtitle: Text(
+                  entry.isUser
+                      ? '删掉这条提问及其后的全部对话'
+                      : '只删掉这条回复',
+                  style: TextStyle(fontSize: 11, color: c.textTertiary),
+                ),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  onRecall();
+                },
+              ),
+              if (entry.canRollback)
+                ListTile(
+                  leading: Icon(Icons.undo, size: 20, color: c.accent),
+                  title: Text('撤销写入（${entry.backups.length} 个文件）'),
+                  subtitle: Text(
+                    '把这条回复写过的文件恢复原样，对话保留',
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    onRollback();
+                  },
+                ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, size: 20, color: c.danger),
+                title: Text('删除这条', style: TextStyle(color: c.danger)),
+                subtitle: Text(
+                  '不动文件，只从对话里移除',
+                  style: TextStyle(fontSize: 11, color: c.textTertiary),
+                ),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  onDelete();
+                },
+              ),
+              const SizedBox(height: AppSpace.sm),
+            ],
+          ),
+        ),
       ),
     );
   }

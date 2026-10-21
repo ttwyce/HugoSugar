@@ -501,6 +501,136 @@ class AiController extends ChangeNotifier {
     return true;
   }
 
+  // ── 撤回 / 重发 / 编辑 ──────────────────────────────
+
+  /// 撤回。
+  ///
+  /// 两种粒度，语义必须分清：
+  ///   - [fromIndex] 及之后全部删掉（默认，用于 user 消息）
+  ///   - 只删这一条（[single] = true，用于 assistant 消息）
+  ///
+  /// 为什么 assistant 消息要支持「只删这条」：
+  /// 用户可能只是觉得这次回答不好，想再问一次那个问题 ——
+  /// 把提问也删掉就得重新打字。
+  ///
+  /// 返回撤销的文件数；`-1` 表示失败。
+  Future<int> recallFromEntry(
+    ChatEntry entry, {
+    required bool rollbackFiles,
+    bool single = false,
+  }) async {
+    if (_busy) return -1;
+    final s = _session;
+    if (s == null) return -1;
+
+    final idx = s.entries.indexOf(entry);
+    if (idx < 0) return -1;
+
+    final removed = single ? [entry] : s.entries.sublist(idx);
+
+    var rolledBack = 0;
+    if (rollbackFiles) {
+      // 从后往前撤，保证同一文件被写过多次时恢复到最早的版本。
+      //
+      // 举例：模型先写 A，后来又改 A。如果正序撤销，
+      // 先恢复成「第一次写之前」的内容，再恢复成「第二次写之前」的内容，
+      // 最终留下的是中间态 —— 顺序反了。
+      for (final e in removed.reversed) {
+        for (final b in e.backups.reversed) {
+          if (await _restoreBackup(b)) rolledBack++;
+        }
+      }
+      siteController?.refresh();
+      siteController?.notifyListeners();
+    }
+
+    final kept = single
+        ? ([...s.entries]..removeAt(idx))
+        : s.entries.sublist(0, idx);
+
+    _session = s.copyWith(
+      entries: kept,
+      updatedAt: DateTime.now(),
+      // 撤回后如果一条不剩，标题回到「新对话」，
+      // 否则列表里会留着一条空会话顶着旧标题
+      title: kept.isEmpty ? '新对话' : s.title,
+    );
+    await _chatStore?.save(_session!);
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+    return rolledBack;
+  }
+
+  /// 把一条用户消息改成新内容后**重新发送**。
+  ///
+  /// 语义等同于「撤回这条及之后所有内容，再用新文本发一次」。
+  /// 所以它必然同时回滚文件 —— 因为那些写入是基于旧提问产生的，
+  /// 留着会和新的回答叠在一起。
+  ///
+  /// [onApproval] 同 [send]。
+  Future<bool> editAndResend(
+    ChatEntry entry,
+    String newText, {
+    required Future<ApprovalDecision?> Function(ApprovalRequest req) onApproval,
+  }) async {
+    if (_busy) return false;
+    if (!entry.isUser) return false;
+    final text = newText.trim();
+    if (text.isEmpty) return false;
+
+    await recallFromEntry(entry, rollbackFiles: true);
+    return send(text, onApproval: onApproval);
+  }
+
+  /// 重发：撤回这条用户消息，原样再发一遍。
+  Future<bool> resend(
+    ChatEntry entry, {
+    required Future<ApprovalDecision?> Function(ApprovalRequest req) onApproval,
+  }) async {
+    if (!entry.isUser) return false;
+    return editAndResend(entry, entry.text, onApproval: onApproval);
+  }
+
+  /// 删除单条消息（不动文件）。
+  ///
+  /// 用于「这条助手回复没用/这条提问打错了」这种清理场景。
+  /// 不提供批量 —— 批量的语义已经被 [recallFromEntry] 覆盖。
+  Future<bool> deleteEntry(ChatEntry entry) async {
+    if (_busy) return false;
+    final s = _session;
+    if (s == null) return false;
+
+    final idx = s.entries.indexOf(entry);
+    if (idx < 0) return false;
+
+    final list = [...s.entries]..removeAt(idx);
+    _session = s.copyWith(entries: list, updatedAt: DateTime.now());
+    await _chatStore?.save(_session!);
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+    return true;
+  }
+
+  /// 恢复一个备份。返回是否真的动了文件。
+  Future<bool> _restoreBackup(WriteBackup b) async {
+    final root = siteController?.repoPath;
+    if (root == null) return false;
+    try {
+      final abs = pkg.join(root, 'content', b.relPath);
+      final f = File(abs);
+      if (b.previous == null) {
+        // 原本不存在 → 删掉
+        if (await f.exists()) await f.delete();
+        return true;
+      }
+      await f.parent.create(recursive: true);
+      await f.writeAsString(b.previous!);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 清掉界面上的错误条。
   void clearError() {
     if (_lastError == null) return;
