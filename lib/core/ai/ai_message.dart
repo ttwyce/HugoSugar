@@ -153,6 +153,19 @@ class StreamAccumulator {
 
   bool get hasReasoning => _reasoning.isNotEmpty;
 
+  /// 清空累加内容。
+  ///
+  /// 重试时用：上一次的正文/思考/工具参数都是半截的，
+  /// 不清掉会和下一次的内容拼在一起，产生「同一段话说两遍」。
+  void reset() {
+    _content.clear();
+    _reasoning.clear();
+    _calls.clear();
+    promptTokens = null;
+    completionTokens = null;
+    finishReason = null;
+  }
+
   List<AiToolCall> get toolCalls {
     final idx = _calls.keys.toList()..sort();
     return idx

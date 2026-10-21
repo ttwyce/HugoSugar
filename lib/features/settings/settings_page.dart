@@ -156,6 +156,83 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() {});
   }
 
+  /// 编辑上下文压缩阈值。
+  ///
+  /// 两个数字必须一起改：保留条数 >= 阈值时，
+  /// ContextCompressor 会判定「要压缩」但保留的比阈值还多，
+  /// 压缩完反而更长。所以在一个弹窗里同时收这两个值。
+  Future<void> _editCompress() async {
+    var threshold = widget.settingsController.aiCompressThreshold;
+    var keep = widget.settingsController.aiKeepRecent;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('上下文压缩'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: Text('触发阈值（条）')),
+                  SizedBox(
+                    width: 64,
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      controller: TextEditingController(text: '$threshold'),
+                      onChanged: (v) => threshold =
+                          (int.tryParse(v) ?? threshold).clamp(4, 200),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(child: Text('保留最近（条）')),
+                  SizedBox(
+                    width: 64,
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      controller: TextEditingController(text: '$keep'),
+                      onChanged: (v) => keep =
+                          (int.tryParse(v) ?? keep).clamp(2, 199),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '超过阈值后，较早的消息会被折叠成摘要，'
+                '最近几条原样保留。\n'
+                '下限 4 / 上限 200。保留数必须小于阈值。',
+                style: TextStyle(fontSize: 11, color: ctx.appColors.textTertiary),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true) return;
+    await widget.settingsController.setAiCompressThreshold(threshold);
+    await widget.settingsController.setAiKeepRecent(keep);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _editMaxTokens() async {
     final sc = widget.settingsController;
     final ctrl = TextEditingController(text: '${sc.aiMaxTokensPerRound}');
@@ -405,6 +482,18 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: _openMemory,
+          ),
+          const IndentedDivider(),
+          ListTile(
+            leading: const Icon(Icons.compress),
+            title: const Text('上下文压缩'),
+            subtitle: Text(
+              '超过 ${widget.settingsController.aiCompressThreshold} 条开始折叠，'
+              '保留最近 ${widget.settingsController.aiKeepRecent} 条',
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _editCompress,
           ),
           const IndentedDivider(),
           ListTile(

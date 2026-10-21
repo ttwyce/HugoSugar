@@ -171,7 +171,71 @@ class AiClient {
   ///
   /// [onDelta] 用于实时更新 UI；[accumulator] 由调用方传入以便
   /// 在流结束后读取 tool_calls 与 usage。
+  /// 带自动重试的流式对话。
+  ///
+  /// ## 什么错该重试
+  ///
+  /// 只看 [AiException.retryable]：网络抖动、5xx、429 才退避重试。
+  /// **401 / 400 绝不重试** —— key 错了重试三次只是让用户白等，
+  /// 而且会让「明明配错了」看起来像「网络不好」。
+  ///
+  /// ## 为什么要退避而不是立刻重试
+  ///
+  /// 429 是「你太快了」。立刻重试等于继续踩油门，
+  /// 有些服务会因此把冷却时间拉得更长。
+  /// 1s → 2s 的简单指数退避足够，不做 8s 那种长等待
+  /// （用户盯着屏幕等，超过 3 秒就会以为卡死）。
+  ///
+  /// ## 为什么不重试「中途断流」
+  ///
+  /// 已经吐出半篇内容后再从头发一次，会导致同一段文本出现两遍
+  /// 且 token 双倍计费。这种情况交给用户决定（重新生成）。
   Future<void> streamChat({
+    required AiEndpoint endpoint,
+    required String apiKey,
+    required List<AiMessage> messages,
+    required StreamAccumulator accumulator,
+    List<Map<String, dynamic>> tools = const [],
+    void Function(String delta)? onDelta,
+    void Function(String delta)? onReasoningDelta,
+    Duration timeout = const Duration(seconds: 60),
+    CancelToken? cancelToken,
+    int maxRetries = 2,
+    void Function(int attempt, int maxAttempts, Duration wait)? onRetry,
+  }) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        await _streamChatOnce(
+          endpoint: endpoint,
+          apiKey: apiKey,
+          messages: messages,
+          accumulator: accumulator,
+          tools: tools,
+          onDelta: onDelta,
+          onReasoningDelta: onReasoningDelta,
+          timeout: timeout,
+          cancelToken: cancelToken,
+        );
+        return;
+      } on AiException catch (e) {
+        // 取消不是失败，不重试
+        if (cancelToken?.isCancelled ?? false) rethrow;
+        if (!e.retryable || attempt >= maxRetries) rethrow;
+
+        attempt++;
+        final wait = Duration(seconds: 1 << (attempt - 1)); // 1s, 2s
+        onRetry?.call(attempt, maxRetries, wait);
+        // 等待期间也要能被取消，否则用户点了停止还要等 2 秒
+        await Future<void>.delayed(wait);
+        cancelToken?.throwIfCancelled();
+        // 重试前清空累加器：半截内容不能和新的一次混在一起
+        accumulator.reset();
+      }
+    }
+  }
+
+  Future<void> _streamChatOnce({
     required AiEndpoint endpoint,
     required String apiKey,
     required List<AiMessage> messages,
@@ -202,6 +266,30 @@ class AiClient {
     if (tools.isNotEmpty) {
       body['tools'] = tools;
       body['tool_choice'] = 'auto';
+    }
+
+    // 思考模式必须**翻译成这个端点认得的请求**。
+    //
+    // 这是「UI 上开了开关但模型没思考」的根因所在：
+    // 混合模型（Qwen3 等）默认走非思考路径，不发参数就不思考，
+    // 光靠解析 reasoning_content 是等不到内容的。
+    //
+    // 各家的参数名和取值完全不同，见 ThinkingMode 的注释。
+    switch (endpoint.thinkingMode) {
+      case ThinkingMode.none:
+        // 什么都不发。普通模型（V3 / 4o）收到未知字段可能直接 400
+        break;
+      case ThinkingMode.parseOnly:
+        // 模型本身总是思考（R1 官方端点），不需要请求参数。
+        // 主动发 enable_thinking 反而有些中转站会报「未知字段」。
+        break;
+      case ThinkingMode.enableThinking:
+        body['enable_thinking'] = true;
+        break;
+      case ThinkingMode.reasoningEffort:
+        // o 系列只认 low/medium/high，不接受布尔值
+        body['reasoning_effort'] = 'medium';
+        break;
     }
 
     http.StreamedResponse res;

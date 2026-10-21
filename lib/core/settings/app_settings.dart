@@ -72,6 +72,8 @@ class AppSettings {
     this.aiNoteCategoryIds = const [],
     this.aiSystemPrompt = '',
     this.aiMaxTokensPerRound = 120000,
+    this.aiCompressThreshold = 20,
+    this.aiKeepRecent = 8,
   });
 
   final DateFormatStyle dateFormat;
@@ -121,6 +123,20 @@ class AppSettings {
   /// 单轮 token 上限（规格：由配置决定）。
   final int aiMaxTokensPerRound;
 
+  /// 历史消息超过多少条时触发上下文压缩。
+  ///
+  /// 为什么可配：这个值取决于模型的实际上下文窗口。
+  /// DeepSeek 是 64K，一些本地小模型只有 8K ——
+  /// 写死一个数字，要么长上下文模型被过早砍掉历史，
+  /// 要么小模型直接超限报错。
+  final int aiCompressThreshold;
+
+  /// 压缩时原样保留最近多少条。
+  ///
+  /// 必须小于 [aiCompressThreshold]，否则「判定要压缩」
+  /// 但保留的比阈值还多，压缩完反而更长（见 ContextCompressor 的注释）。
+  final int aiKeepRecent;
+
   AppSettings copyWith({
     DateFormatStyle? dateFormat,
     FileNameStyle? fileNameStyle,
@@ -130,6 +146,8 @@ class AppSettings {
     List<String>? aiNoteCategoryIds,
     String? aiSystemPrompt,
     int? aiMaxTokensPerRound,
+    int? aiCompressThreshold,
+    int? aiKeepRecent,
   }) {
     return AppSettings(
       dateFormat: dateFormat ?? this.dateFormat,
@@ -140,6 +158,8 @@ class AppSettings {
       aiNoteCategoryIds: aiNoteCategoryIds ?? this.aiNoteCategoryIds,
       aiSystemPrompt: aiSystemPrompt ?? this.aiSystemPrompt,
       aiMaxTokensPerRound: aiMaxTokensPerRound ?? this.aiMaxTokensPerRound,
+      aiCompressThreshold: aiCompressThreshold ?? this.aiCompressThreshold,
+      aiKeepRecent: aiKeepRecent ?? this.aiKeepRecent,
     );
   }
 
@@ -152,6 +172,8 @@ class AppSettings {
         'aiNoteCategoryIds': aiNoteCategoryIds,
         'aiSystemPrompt': aiSystemPrompt,
         'aiMaxTokensPerRound': aiMaxTokensPerRound,
+        'aiCompressThreshold': aiCompressThreshold,
+        'aiKeepRecent': aiKeepRecent,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -167,6 +189,12 @@ class AppSettings {
         // 0 会让第一轮请求立刻判定「超限」
         aiMaxTokensPerRound:
             (j['aiMaxTokensPerRound'] as num?)?.toInt() ?? 120000,
+        // 下限保护：0 会让「压缩」在同一轮里反复触发，
+        // 1 会让最近消息只留一条，等于把上下文全折叠掉
+        aiCompressThreshold:
+            ((j['aiCompressThreshold'] as num?)?.toInt() ?? 20).clamp(4, 200),
+        aiKeepRecent:
+            ((j['aiKeepRecent'] as num?)?.toInt() ?? 8).clamp(2, 100),
       );
 }
 
@@ -183,6 +211,8 @@ abstract class SettingsControllerLike {
   List<String> get aiNoteCategoryIds;
   String get aiSystemPrompt;
   int get aiMaxTokensPerRound;
+  int get aiCompressThreshold;
+  int get aiKeepRecent;
 }
 
 /// 读写 `settings.json`。

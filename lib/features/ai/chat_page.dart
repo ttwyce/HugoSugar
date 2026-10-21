@@ -148,6 +148,7 @@ class _ChatPageState extends State<ChatPage> {
                                 onRollback: () => _rollback(entries[i]),
                                 onRecall: () => _recall(entries[i]),
                                 onResend: () => _resend(entries[i]),
+                                onRegenerate: () => _regenerate(entries[i]),
                                 onEdit: () => _editEntry(entries[i]),
                                 onDelete: () => _deleteEntry(entries[i]),
                               );
@@ -179,6 +180,10 @@ class _ChatPageState extends State<ChatPage> {
                   label: _modelLabel(ctrl),
                   busy: ctrl.busy,
                   onTap: _openSwitcher,
+                  entryCount: ctrl.currentEntryCount,
+                  threshold: ctrl.settings?.aiCompressThreshold ?? 20,
+                  compressed: ctrl.lastCompressed,
+                  onContextTap: _showContextDetail,
                 ),
                 _InputBar(
                   controller: _input,
@@ -188,6 +193,62 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// 上下文详情：点占用条时弹出，解释这些数字从哪来。
+  void _showContextDetail() {
+    final ctrl = widget.controller;
+    final threshold = ctrl.settings?.aiCompressThreshold ?? 20;
+    final keep = ctrl.settings?.aiKeepRecent ?? 8;
+    final count = ctrl.currentEntryCount;
+    final compressed = ctrl.lastCompressed;
+    final dropped = ctrl.lastDroppedCount;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.appColors;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('上下文', style: TextStyle(fontSize: 15, color: c.textPrimary)),
+                const SizedBox(height: 12),
+                _kv(c, '当前消息', '$count 条'),
+                _kv(c, '压缩阈值', '$threshold 条'),
+                _kv(c, '保留最近', '$keep 条'),
+                if (compressed) _kv(c, '上次请求', '已折叠 $dropped 条��消息'),
+                if (ctrl.lastSentTokens > 0)
+                  _kv(c, '上次估算 token', '约 ${ctrl.lastSentTokens}'),
+                const SizedBox(height: 12),
+                Text(
+                  '超过阈值后，较早的消息会被折叠成一段摘要，'
+                  '最近 $keep 条原样保留。\n\n'
+                  '阈值可以在「设置 → AI → 上下文压缩阈值」里调整。',
+                  style: TextStyle(fontSize: 11, color: c.textTertiary, height: 1.6),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _kv(AppColors c, String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Text(k, style: TextStyle(fontSize: 12, color: c.textTertiary)),
+          const Spacer(),
+          Text(v, style: TextStyle(fontSize: 12, color: c.textSecondary)),
+        ],
+      ),
     );
   }
 
@@ -416,6 +477,27 @@ class _ChatPageState extends State<ChatPage> {
   ///
   /// 和「编辑后重发」分开问，因为这里的 diff 是零 ——
   /// 用户想要的只是「同样的问法，让模型再答一次」。
+  /// 再生成一次：保留这条旧回答，重新回答同一个问题。
+  ///
+  /// 与「原样重发」的区别是语义上的，必须说清楚：
+  /// - 重发：旧回答没了（被撤回），文件也回滚
+  /// - 再生成：旧回答还在，文件不动，新回答追加在后面
+  ///
+  /// 所以这里不给确认弹窗 —— 它不删任何东西，没有破坏性。
+  Future<void> _regenerate(ChatEntry entry) async {
+    if (entry.isUser) return;
+    final ctrl = widget.controller;
+    if (ctrl.busy) return;
+
+    final ok = await ctrl.regenerate(
+      onApproval: _askApproval,
+    );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法重新生成：没有可重答的提问')),
+      );
+    }
+  }
   Future<void> _resend(ChatEntry entry) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -651,6 +733,7 @@ class _EntryView extends StatelessWidget {
     required this.onRollback,
     required this.onRecall,
     required this.onResend,
+     required this.onRegenerate,
     required this.onEdit,
     required this.onDelete,
     required this.busy,
@@ -660,6 +743,9 @@ class _EntryView extends StatelessWidget {
   final VoidCallback onRollback;
   final VoidCallback onRecall;
   final VoidCallback onResend;
+
+   /// 保留旧回答，再生成一次
+   final VoidCallback onRegenerate;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -770,6 +856,19 @@ class _EntryView extends StatelessWidget {
                   },
                 ),
               ],
+              if (!entry.isUser)
+                ListTile(
+                  leading: const Icon(Icons.autorenew, size: 20),
+                  title: const Text('再生成一次'),
+                  subtitle: Text(
+                    '保留这条回答，重新问一遍（不回滚文件）',
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    onRegenerate();
+                  },
+                ),
               // 撤回：user 消息撤回「这条之后」；assistant 消息撤回「这条」
               ListTile(
                 leading: const Icon(Icons.history_toggle_off, size: 20),
@@ -1081,11 +1180,26 @@ class _ModelBar extends StatelessWidget {
     required this.label,
     required this.busy,
     required this.onTap,
+    required this.entryCount,
+    required this.threshold,
+    required this.compressed,
+    required this.onContextTap,
   });
 
   final String label;
   final bool busy;
   final VoidCallback onTap;
+
+  /// 当前会话消息条数
+  final int entryCount;
+
+  /// 压缩阈值
+  final int threshold;
+
+  /// 上次请求是否发生了压缩
+  final bool compressed;
+
+  final VoidCallback onContextTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1103,30 +1217,123 @@ class _ModelBar extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: c.divider, width: 1)),
         ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+            children: [
+              Icon(
+                Icons.bolt,
+                size: 12,
+                color: busy ? c.textTertiary : c.accent,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  busy ? '$label（生成中，暂不可切换）' : label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: busy ? c.textTertiary : c.textSecondary,
+                  ),
+                ),
+              ),
+              Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
+              const SizedBox(width: 3),
+              Text(
+                '切换',
+                style: TextStyle(fontSize: 10, color: c.textTertiary),
+              ),
+            ],
+            ),
+            _ContextMeter(
+              entryCount: entryCount,
+              threshold: threshold,
+              compressed: compressed,
+              onTap: onContextTap,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 上下文占用条。
+///
+/// ## 为什么分母是「压缩阈值」而不是模型窗口
+///
+/// 用户接的端点可能是 64K 也可能是 8K，我们不知道。
+/// 但「离触发压缩还有多远」是确定的，也是用户唯一能据此行动的数字 ——
+/// 快满了就主动开个新对话，而不是等模型报超限。
+///
+/// ## 为什么显示条数而不是 token
+///
+/// token 是估算值（见 estimateTokens 的注释），拿估算值当精确数字展示
+/// 会误导用户。条数是确定的事实，阈值也是条数，两者能直接比。
+class _ContextMeter extends StatelessWidget {
+  const _ContextMeter({
+    required this.entryCount,
+    required this.threshold,
+    required this.compressed,
+    required this.onTap,
+  });
+
+  final int entryCount;
+  final int threshold;
+  final bool compressed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final ratio =
+        threshold <= 0 ? 0.0 : (entryCount / threshold).clamp(0.0, 1.0);
+
+    // 三档：宽裕 / 接近阈值 / 已压缩过
+    final color = compressed
+        ? c.danger
+        : ratio >= 0.8
+            ? c.warning
+            : c.accent;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 1),
         child: Row(
           children: [
             Icon(
-              Icons.bolt,
-              size: 12,
-              color: busy ? c.textTertiary : c.accent,
+              Icons.donut_small,
+              size: 10,
+              color: compressed ? c.danger : c.textTertiary,
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: 4),
+            Text(
+              compressed ? '已压缩' : '上下文',
+              style: TextStyle(fontSize: 10, color: c.textTertiary),
+            ),
+            const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                busy ? '$label（生成中，暂不可切换）' : label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: busy ? c.textTertiary : c.textSecondary,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 3,
+                  backgroundColor: c.divider,
+                  valueColor: AlwaysStoppedAnimation(color),
                 ),
               ),
             ),
-            Icon(Icons.swap_horiz, size: 13, color: c.textTertiary),
-            const SizedBox(width: 3),
+            const SizedBox(width: 6),
             Text(
-              '切换',
-              style: TextStyle(fontSize: 10, color: c.textTertiary),
+              '$entryCount / $threshold 条',
+              style: TextStyle(
+                fontSize: 10,
+                color: compressed ? c.danger : c.textTertiary,
+              ),
             ),
           ],
         ),

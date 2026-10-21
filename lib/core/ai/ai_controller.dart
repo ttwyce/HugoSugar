@@ -12,6 +12,7 @@ import '../site/site_controller.dart';
 import 'agent_runner.dart';
 import 'ai_client.dart';
 import 'ai_endpoint.dart';
+import 'ai_message.dart';
 import 'cancel_token.dart';
 import 'context_compressor.dart';
 import 'chat_store.dart';
@@ -85,8 +86,14 @@ class AiController extends ChangeNotifier {
   /// 当前请求的取消令牌（null = 没有进行中的请求）
   CancelToken? _activeCancel;
 
-  /// 上下文压缩器
-  final _compressor = const ContextCompressor();
+  /// 上下文压缩器。用设置里的阈值构造，见 [_compressorOf]。
+  ContextCompressor _compressorOf() {
+    final st = settings;
+    return ContextCompressor(
+      maxMessages: st?.aiCompressThreshold ?? 20,
+      keepRecent: st?.aiKeepRecent ?? 8,
+    );
+  }
 
   /// 上次发送时是否做了压缩，以及折叠了多少条
   bool _lastCompressed = false;
@@ -94,6 +101,29 @@ class AiController extends ChangeNotifier {
 
   bool get lastCompressed => _lastCompressed;
   int get lastDroppedCount => _lastDroppedCount;
+
+  /// 上一次请求实际发出的消息条数（压缩后）
+  int _lastSentCount = 0;
+  int get lastSentCount => _lastSentCount;
+
+  /// 上一次请求实际发出的 token 估算（压缩后）
+  int _lastSentTokens = 0;
+  int get lastSentTokens => _lastSentTokens;
+
+  /// 当前会话的上下文占用比例（0.0 ~ 1.0）。
+  ///
+  /// 分母用**压缩阈值**而不是模型真实上下文窗口：
+  /// 我们不知道用户接的是 64K 还是 8K 的模型，但「离触发压缩还有多远」
+  /// 是确定的，也是用户唯一能据此行动的数字。
+  double get contextUsageRatio {
+    final limit = settings?.aiCompressThreshold ?? 20;
+    if (limit <= 0) return 0;
+    return (_currentCount / limit).clamp(0.0, 1.0);
+  }
+
+  /// 当前会话的消息条数（未压缩时的原始条数）
+  int get _currentCount => _session?.entries.length ?? 0;
+  int get currentEntryCount => _currentCount;
 
   /// 本次对话的 AI 读取范围（想法页设置过就沿用）
   bool _readNotes = false;
@@ -130,6 +160,7 @@ class AiController extends ChangeNotifier {
     required String baseUrl,
     String model = '',
     String apiKey = '',
+    ThinkingMode thinkingMode = ThinkingMode.none,
   }) async {
     final id = 'ep_${DateTime.now().microsecondsSinceEpoch}';
     final ep = AiEndpoint(
@@ -138,6 +169,7 @@ class AiController extends ChangeNotifier {
       baseUrl: baseUrl.trim(),
       model: model.trim(),
       keyHint: apiKey.isEmpty ? '' : AiKeyStore.mask(apiKey),
+      thinkingMode: thinkingMode,
     );
 
     _config = _config.copyWith(
@@ -412,9 +444,12 @@ class AiController extends ChangeNotifier {
     // withUser 里已经有这条 user 消息了，而 AgentRunner.run 会在末尾
     // 再补一条 —— 直接传 withUser 会让模型收到两遍同样的问题。
     final rawMessages = s0.toApiMessages();
-    final compressed = _compressor.compress(rawMessages);
+    final compressed = _compressorOf().compress(rawMessages);
     _lastCompressed = compressed.compressed;
     _lastDroppedCount = compressed.droppedCount;
+    _lastSentCount = compressed.messages.length;
+    _lastSentTokens = estimateMessagesTokens(compressed.messages) +
+        estimateTokens(_buildSystemPrompt());
 
     final systemPrompt = _buildSystemPrompt();
     final tools = _buildTools();
@@ -605,6 +640,49 @@ class AiController extends ChangeNotifier {
     return send(text, onApproval: onApproval);
   }
 
+  /// 对同一条提问再生成一次回答，保留之前的回答。
+  ///
+  /// ## 与 resend 的区别（关键，两者语义不同）
+  ///
+  /// - resend：删除旧回答，并回滚文件。适合「答得不好，要替换」。
+  /// - regenerate：保留旧回答，不回滚文件。适合「想比较几种写法」。
+  ///
+  /// 为什么不回滚文件：旧回答写的文章还在，用户可能想留着对比。
+  /// 若新回答写同一路径会覆盖旧的 —— 那是用户自己选的路径冲突，
+  /// 交给审批弹窗处理。
+  ///
+  /// ## 实现要点
+  ///
+  /// 不走「先删再加」，而是：
+  /// 1. 取最后一条 user 消息之前的历史作为 base
+  /// 2. 再调一次 runner
+  /// 3. 新回答追加在末尾（旧的仍在上面）
+  ///
+  /// 不能把旧回答也当历史喂进去 —— 模型会以为那是别人的答复，
+  /// 然后倾向于「延续」而不是重新回答，输出会和旧的几乎一样。
+  Future<bool> regenerate({
+    required Future<ApprovalDecision?> Function(ApprovalRequest req) onApproval,
+  }) async {
+    if (_busy) return false;
+    final s = _session;
+    if (s == null || s.entries.isEmpty) return false;
+
+    var lastUserIdx = -1;
+    for (var i = s.entries.length - 1; i >= 0; i--) {
+      if (s.entries[i].isUser) {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return false;
+
+    final question = s.entries[lastUserIdx].text;
+    final base = s.copyWith(entries: s.entries.sublist(0, lastUserIdx));
+    _session = base;
+    notifyListeners();
+
+    return send(question, onApproval: onApproval);
+  }
   /// 重发：撤回这条用户消息，原样再发一遍。
   Future<bool> resend(
     ChatEntry entry, {

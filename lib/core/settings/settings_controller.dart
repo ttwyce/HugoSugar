@@ -38,6 +38,12 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   @override
   int get aiMaxTokensPerRound => _value.aiMaxTokensPerRound;
 
+  @override
+  int get aiCompressThreshold => _value.aiCompressThreshold;
+
+  @override
+  int get aiKeepRecent => _value.aiKeepRecent;
+
   /// 打开并载入。失败时保持默认值，不抛异常。
   Future<void> load({SettingsStore? store}) async {
     if (store != null) _store = store;
@@ -110,6 +116,30 @@ class SettingsController extends ChangeNotifier implements SettingsControllerLik
   ///
   /// 下限保护 1000：设成 0 或负数会让第一轮请求立刻判定超限，
   /// 用户只会看到「本轮 token 已用 0，超过上限 0」这种费解提示。
+  /// 上下文压缩阈值。
+  ///
+  /// 下限 4 / 上限 200：阈值太小会让压缩几乎每轮都触发，
+  /// 太大则失去意义（模型上下文早就爆了）。
+  Future<void> setAiCompressThreshold(int n) async {
+    final v = n.clamp(4, 200);
+    if (_value.aiCompressThreshold == v) return;
+    // 保留条数必须小于阈值，否则「判定要压缩」但保留的比阈值还多，
+    // 压缩完反而更长 → 收敛到阈值减一
+    final keep = _value.aiKeepRecent >= v ? v - 1 : _value.aiKeepRecent;
+    _value = _value.copyWith(aiCompressThreshold: v, aiKeepRecent: keep);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
+  /// 压缩时原样保留的最近条数。下限 2。
+  Future<void> setAiKeepRecent(int n) async {
+    final v = n.clamp(2, _value.aiCompressThreshold - 1);
+    if (_value.aiKeepRecent == v) return;
+    _value = _value.copyWith(aiKeepRecent: v);
+    notifyListeners();
+    await _store?.save(_value);
+  }
+
   Future<void> setAiMaxTokensPerRound(int tokens) async {
     final v = tokens < 1000 ? 1000 : tokens;
     if (_value.aiMaxTokensPerRound == v) return;

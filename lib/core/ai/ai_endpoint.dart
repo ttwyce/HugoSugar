@@ -3,6 +3,58 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+/// 思考模式的实现协议。
+///
+/// ## 为什么这是个枚举而不是一个开关
+///
+/// 各家「让模型思考」的方式完全不同，没有统一字段：
+///
+/// | 服务 | 怎么开启 | 怎么返回 |
+/// |---|---|---|
+/// | DeepSeek-R1 及兼容实现 | **不用请求**，直接就有 | `delta.reasoning_content` |
+/// | Qwen3（混合模型） | `enable_thinking: true` | `delta.reasoning_content` |
+/// | OpenAI o1/o3 | `reasoning_effort: "high"` | **不返回**思考内容 |
+/// | 普通模型（V3/4o） | 不支持 | — |
+///
+/// 所以「我想看思考过程」这件事，必须翻译成**这个端点认得的请求**，
+/// 否则就会出现「UI 上开了开关但模型根本没思考」的情况 ——
+/// 混合模型（如 Qwen3）默认走非思考路径，不发参数它就不思考。
+enum ThinkingMode {
+  /// 关闭。不发任何思考相关参数。
+  none('none', '关闭'),
+
+  /// 只解析不复请求：模型本身总是思考（如 DeepSeek-R1 官方端点），
+  /// 我们不发送任何参数，只负责把 reasoning_content 显示出来。
+  ///
+  /// 对 R1 这类纯推理模型，发 `enable_thinking` 反而有些中转站会报
+  /// 400（未知字段），所以「只看不请求」单独列出来。
+  parseOnly('parse_only', '总是思考（R1 等）'),
+
+  /// 发 `enable_thinking: true`（Qwen3、硅基流动的混合模型）。
+  enableThinking('enable_thinking', '按需开启（enable_thinking）'),
+
+  /// 发 `reasoning_effort`（OpenAI o 系列）。
+  ///
+  /// 注意：o1/o3 **不返回**思考内容，所以选这个只影响推理强度，
+  /// 界面上不会出现思考过程。
+  reasoningEffort('reasoning_effort', '推理强度（o1/o3）');
+
+  const ThinkingMode(this.id, this.label);
+
+  final String id;
+  final String label;
+
+  /// 是否应该显示思考区（parseOnly / enableThinking 才可能返回内容）
+  bool get showsReasoning => this == parseOnly || this == enableThinking;
+
+  static ThinkingMode fromId(String? id) {
+    for (final m in values) {
+      if (m.id == id) return m;
+    }
+    return none;
+  }
+}
+
 /// 一个 OpenAI 兼容端点。
 ///
 /// 为什么用「端点」而不是「服务商」：
@@ -16,6 +68,7 @@ class AiEndpoint {
     required this.baseUrl,
     this.model = '',
     this.keyHint = '',
+    this.thinkingMode = ThinkingMode.none,
   });
 
   /// 内部标识，生成后不变。key 与它绑定，改名不会丢 key。
@@ -33,11 +86,19 @@ class AiEndpoint {
   /// 打码后的 key 片段，仅用于界面展示「已配置哪把 key」
   final String keyHint;
 
+  /// 思考模式。见 [ThinkingMode]。
+  ///
+  /// 配在端点上而不是全局：同一个 App 可能同时接 DeepSeek（支持
+  /// reasoning_content）和一个普通端点（不支持），协议差异跟的是
+  /// 端点实现的形态，不是模型名。
+  final ThinkingMode thinkingMode;
+
   AiEndpoint copyWith({
     String? name,
     String? baseUrl,
     String? model,
     String? keyHint,
+    ThinkingMode? thinkingMode,
   }) {
     return AiEndpoint(
       id: id,
@@ -45,6 +106,7 @@ class AiEndpoint {
       baseUrl: baseUrl ?? this.baseUrl,
       model: model ?? this.model,
       keyHint: keyHint ?? this.keyHint,
+      thinkingMode: thinkingMode ?? this.thinkingMode,
     );
   }
 
@@ -54,6 +116,7 @@ class AiEndpoint {
         'baseUrl': baseUrl,
         'model': model,
         'keyHint': keyHint,
+        'thinkingMode': thinkingMode.id,
       };
 
   static AiEndpoint fromJson(Map<String, dynamic> j) => AiEndpoint(
@@ -62,6 +125,7 @@ class AiEndpoint {
         baseUrl: j['baseUrl'] as String? ?? '',
         model: j['model'] as String? ?? '',
         keyHint: j['keyHint'] as String? ?? '',
+        thinkingMode: ThinkingMode.fromId(j['thinkingMode'] as String?),
       );
 
   /// 拼出具体的接口地址。
