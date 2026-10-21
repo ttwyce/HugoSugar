@@ -69,7 +69,10 @@ class _AppShellState extends State<AppShell> {
             controller: widget.noteController,
             settingsController: widget.settingsController,
           ),
-          PostsPage(siteController: widget.siteController),
+          PostsPage(
+            siteController: widget.siteController,
+            aiController: widget.aiController,
+          ),
           ChatPage(controller: widget.aiController),
           SitePage(
             controller: widget.siteController,

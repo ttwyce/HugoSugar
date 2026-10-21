@@ -9,6 +9,9 @@ import '../../app/theme/reading_prefs.dart';
 import '../../core/edit/undo_history.dart';
 import '../../core/post/front_matter.dart';
 import '../../core/site/site_controller.dart';
+import '../../core/ai/ai_controller.dart';
+import '../../core/ai/ai_client.dart';
+import '../ai/chat_markdown.dart';
 import 'markdown_highlighter.dart';
 import '../../shared/chip_editor.dart';
 import 'markdown_toolbar.dart';
@@ -31,6 +34,7 @@ class EditorPage extends StatefulWidget {
     required this.title,
     this.relativePath,
     this.controller,
+    this.aiController,
   });
 
   final String title;
@@ -40,6 +44,9 @@ class EditorPage extends StatefulWidget {
 
   /// 用来读写文件；为空时编辑器不落盘
   final SiteController? controller;
+
+  /// 写作 AI。为空时「AI」按钮提示未接入（理论上主流程都会传入）。
+  final AiController? aiController;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -679,7 +686,7 @@ class _EditorPageState extends State<EditorPage> {
                           _SaveIndicator(state: _saveState, error: _saveError),
                           const Spacer(),
                           TextButton.icon(
-                            onPressed: _showPreviewSoon,
+                            onPressed: _openPreview,
                             icon: const Icon(
                               Icons.visibility_outlined,
                               size: 16,
@@ -688,7 +695,7 @@ class _EditorPageState extends State<EditorPage> {
                           ),
                           const SizedBox(width: AppSpace.xxs),
                           TextButton.icon(
-                            onPressed: _showAiSoon,
+                            onPressed: _openWriteAi,
                             icon: const Icon(Icons.auto_awesome, size: 16),
                             label: const Text('AI'),
                           ),
@@ -705,25 +712,132 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
-  /// 预览和写作 AI 属于后续里程碑。
-  /// 之前这两个按钮是 `onPressed: () {}`，点了毫无反应，像是卡住 ——
-  /// 现在明确告诉用户「还没做」，比假装响应诚实。
-  void _showPreviewSoon() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr(T('预览功能在 M4 之后提供，当前请用 Front Matter + 正文核对'))),
-        duration: Duration(seconds: 2),
+  /// 预览：底部滑出 Markdown 渲染结果（占 85% 高度，可下拉关闭）。
+  ///
+  /// 用 [ChatMarkdown] 而不是编辑器的高亮器：预览要的是**渲染结果**
+  /// （# 变大标题、**粗** 变粗、反引号消失），而不是给源码着色。
+  void _openPreview() {
+    final body = _bodyCtrl.text;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (ctx) {
+        final c = ctx.appColors;
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (ctx2, scrollCtrl) => Column(
+            children: [
+              // 抓手
+              Container(
+                margin: const EdgeInsets.only(top: AppSpace.xs),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.divider,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.md,
+                  AppSpace.sm,
+                  AppSpace.xs,
+                  AppSpace.xs,
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      context.tr(T('预览')),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(Icons.close, color: c.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: c.divider),
+              Expanded(
+                child: body.trim().isEmpty
+                    ? Center(
+                        child: Text(
+                          context.tr(T('正文还是空的')),
+                          style: TextStyle(color: c.textTertiary),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.all(AppSpace.lg),
+                        child: ChatMarkdown(body),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 写作 AI：底部面板输入指令 → 流式生成 → 可「插入到光标处 / 替换整篇」。
+  void _openWriteAi() {
+    final ai = widget.aiController;
+    if (ai == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr(T('写作 AI 未接入（缺少 AI 控制器）')))),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (_) => _WriteAiSheet(
+        ai: ai,
+        currentBody: _bodyCtrl.text,
+        onInsert: (text) => _applyAiResult(text, replaceAll: false),
+        onReplaceAll: (text) => _applyAiResult(text, replaceAll: true),
       ),
     );
   }
 
-  void _showAiSoon() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.tr(T('写作 AI 在 M5 提供'))),
-        duration: Duration(seconds: 2),
-      ),
+  /// 把 AI 生成结果写回正文。
+  ///
+  /// [replaceAll] 为 true 时整篇替换；否则插入到当前光标处。
+  /// 只是改文本，会自动触发自动保存 —— 不需要额外手动保存。
+  void _applyAiResult(String text, {required bool replaceAll}) {
+    if (replaceAll) {
+      _bodyCtrl.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      return;
+    }
+    final sel = _bodyCtrl.selection;
+    final src = _bodyCtrl.text;
+    final at = sel.isValid ? sel.start : src.length;
+    final end = sel.isValid ? sel.end : src.length;
+    final newText = src.replaceRange(at, end, text);
+    _bodyCtrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: at + text.length),
     );
+    _bodyFocus.requestFocus();
   }
 
   /// 文章信息面板
@@ -834,6 +948,267 @@ class _EditorPageState extends State<EditorPage> {
         SnackBar(content: Text(TP('删除失败：{}', [ctrl.error ?? "未知错误"]))),
       );
     }
+  }
+}
+
+// ── 写作 AI 面板 ────────────────────────────────────
+
+/// 写作 AI 底部面板。
+///
+/// 交互：输入指令（如「帮我写一段开头」「把这段改得更简洁」）→ 点「生成」→
+/// 流式显示结果 → 满意后点「插入到光标处」或「替换整篇」。
+///
+/// 为什么用面板而不是新页面：写作时用户要一直看着正文，跳页会丢上下文。
+/// 面板只占下半屏，盖子一关就回到编辑器。
+class _WriteAiSheet extends StatefulWidget {
+  const _WriteAiSheet({
+    required this.ai,
+    required this.currentBody,
+    required this.onInsert,
+    required this.onReplaceAll,
+  });
+
+  final AiController ai;
+  final String currentBody;
+  final void Function(String) onInsert;
+  final void Function(String) onReplaceAll;
+
+  @override
+  State<_WriteAiSheet> createState() => _WriteAiSheetState();
+}
+
+class _WriteAiSheetState extends State<_WriteAiSheet> {
+  final _inputCtrl = TextEditingController();
+  final _result = StringBuffer();
+  bool _running = false;
+  String? _error;
+  String _live = '';
+
+  @override
+  void dispose() {
+    _inputCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _generate() async {
+    final instruction = _inputCtrl.text.trim();
+    if (instruction.isEmpty) return;
+    setState(() {
+      _running = true;
+      _error = null;
+      _result.clear();
+      _live = '';
+    });
+    try {
+      final full = await widget.ai.composeWriting(
+        instruction: instruction,
+        currentBody: widget.currentBody,
+        onDelta: (text) {
+          if (!mounted) return;
+          setState(() => _live = text);
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _result.write(full);
+        _running = false;
+      });
+    } on AiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _running = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _running = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final output = _result.isNotEmpty ? _result.toString() : _live;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: AppSpace.xs),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.divider,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                AppSpace.sm,
+                AppSpace.xs,
+                AppSpace.xxs,
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome, size: 18, color: c.accent),
+                  const SizedBox(width: AppSpace.xs),
+                  Text(
+                    context.tr(T('写作 AI')),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.close, color: c.textSecondary),
+                    onPressed: _running ? null : () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            // 输出区（流式）
+            if (_running || output.isNotEmpty)
+              Container(
+                constraints: const BoxConstraints(maxHeight: 220),
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+                padding: const EdgeInsets.all(AppSpace.sm),
+                decoration: BoxDecoration(
+                  color: c.surfaceHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: SingleChildScrollView(
+                  child: _running && output.isEmpty
+                      ? Row(
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: c.accent,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpace.xs),
+                            Text(
+                              context.tr(T('生成中…')),
+                              style: TextStyle(color: c.textTertiary),
+                            ),
+                          ],
+                        )
+                      : ChatMarkdown(output),
+                ),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.md,
+                  AppSpace.xs,
+                  AppSpace.md,
+                  0,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _error!,
+                    style: TextStyle(fontSize: 12, color: c.danger),
+                  ),
+                ),
+              ),
+            // 输入框
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.md,
+                AppSpace.sm,
+                AppSpace.md,
+                AppSpace.xs,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputCtrl,
+                      enabled: !_running,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: context.tr(
+                          T('告诉 AI 你想怎么写，如「帮我写一段开头」'),
+                        ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpace.sm,
+                          vertical: AppSpace.sm,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpace.xs),
+                  FilledButton(
+                    onPressed: _running ? null : _generate,
+                    child: _running
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(context.tr(T('生成'))),
+                  ),
+                ],
+              ),
+            ),
+            // 结果操作
+            if (output.isNotEmpty && !_running)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.md,
+                  0,
+                  AppSpace.md,
+                  AppSpace.sm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          widget.onInsert(output);
+                          Navigator.pop(context);
+                        },
+                        child: Text(context.tr(T('插入到光标处'))),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpace.sm),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          widget.onReplaceAll(output);
+                          Navigator.pop(context);
+                        },
+                        child: Text(context.tr(T('替换整篇'))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

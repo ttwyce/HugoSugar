@@ -1294,6 +1294,76 @@ class AiController extends ChangeNotifier {
     siteController?.refresh();
   }
 
+  /// 编辑器里的「写作 AI」：用一个**独立的一次性请求**，不进入对话 session、
+  /// 不写聊天记录、不调工具。
+  ///
+  /// 为什么单开一条而不是复用 `send`：
+  /// - `send` 会写 ChatSession、跑 AgentRunner（带工具、带审批），
+  ///   而编辑器里要的是「给我一段正文」，不该污染对话历史、也不该弹审批。
+  /// - 这里只做「给一段系统提示 + 当前正文 + 用户指令 → 流式返回文本」。
+  ///
+  /// [onDelta] 每来一段增量就回调，UI 可实时刷新；
+  /// 返回完整文本。失败抛 [AiException]，调用方 catch 后提示。
+  Future<String> composeWriting({
+    required String instruction,
+    required String currentBody,
+    void Function(String full)? onDelta,
+    CancelToken? cancelToken,
+  }) async {
+    final ep = activeEndpoint;
+    if (ep == null) {
+      throw AiException(AiErrorKind.notConfigured, '还没有配置 AI 端点');
+    }
+    if (ep.model.trim().isEmpty) {
+      throw AiException(AiErrorKind.notConfigured, '还没有为「${ep.name}」选择模型');
+    }
+    final key = await readKey(ep.id);
+    if (key == null || key.isEmpty) {
+      throw AiException(AiErrorKind.notConfigured, '还没有填写「${ep.name}」的 API Key');
+    }
+
+    final system =
+        '你是一名中文写作助手，正在协助用户编辑一篇 Markdown 文章。'
+        '要求：直接输出可用的 Markdown 正文，不要输出解释、不要用代码块包住全文、'
+        '不要在开头复述用户指令。只写用户要求的那部分内容。';
+
+    final user = StringBuffer();
+    if (currentBody.trim().isNotEmpty) {
+      user.write('当前正文如下（供你理解上下文，未必需要全部保留）：\n\n');
+      user.write('<<<\n');
+      user.write(currentBody);
+      user.write('\n>>>\n\n');
+    }
+    user.write('我的要求：');
+    user.write(instruction.trim());
+
+    final messages = [
+      AiMessage(role: 'system', content: system),
+      AiMessage(role: 'user', content: user.toString()),
+    ];
+
+    final acc = StreamAccumulator();
+    await _client.streamChat(
+      endpoint: ep,
+      apiKey: key,
+      messages: messages,
+      accumulator: acc,
+      onDelta: (d) {
+        final full = acc.content;
+        onDelta?.call(full);
+      },
+      cancelToken: cancelToken,
+      // 写作不需要思考链，走普通档位，省钱也更快
+      thinkingLevel: ThinkingLevel.none,
+    );
+    return acc.content;
+  }
+
+  @visibleForTesting
+  void debugSetKeyStore(AiKeyStore store) {
+    _keyStore = store;
+  }
+
   @visibleForTesting
   void debugSetSession(ChatSession? s) {
     _session = s;

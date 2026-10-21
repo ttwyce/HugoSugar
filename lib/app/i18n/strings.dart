@@ -1005,6 +1005,22 @@ const Map<String, L10nEntry> kStrings = {
     en: '{} more — see all on the Posts page',
   ),
   '这段对话写过 {} 个文件：': (zh: '这段对话写过 {} 个文件：', en: 'This chat wrote {} files:'),
+
+  // ── 编辑器预览 / 写作 AI ──
+  '正文还是空的': (zh: '正文还是空的', en: 'The body is empty'),
+  '写作 AI': (zh: '写作 AI', en: 'Writing AI'),
+  '写作 AI 未接入（缺少 AI 控制器）': (
+    zh: '写作 AI 未接入（缺少 AI 控制器）',
+    en: 'Writing AI is not connected (missing AI controller)',
+  ),
+  '告诉 AI 你想怎么写，如「帮我写一段开头」': (
+    zh: '告诉 AI 你想怎么写，如「帮我写一段开头」',
+    en: 'Tell the AI how to write, e.g. "Write an opening paragraph for me"',
+  ),
+  '生成': (zh: '生成', en: 'Generate'),
+  '生成中…': (zh: '生成中…', en: 'Generating…'),
+  '插入到光标处': (zh: '插入到光标处', en: 'Insert at cursor'),
+  '替换整篇': (zh: '替换整篇', en: 'Replace all'),
 };
 
 /// 取文案。
