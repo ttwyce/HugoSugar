@@ -50,10 +50,18 @@ class AgentCallbacks {
     required this.onToolStart,
     required this.onToolDone,
     required this.requestApproval,
+    this.onReasoningDelta,
+    this.onReasoningDone,
   });
 
   /// 流式文本增量
   final void Function(String delta) onTextDelta;
+
+  /// 思考过程增量。模型不返回思考内容时不会触发。
+  final void Function(String delta)? onReasoningDelta;
+
+  /// 一个回合的思考结束时回调（正文开始前），供 UI 收起思考区
+  final void Function()? onReasoningDone;
 
   /// 工具开始执行
   final void Function(String toolName, Map<String, dynamic> args) onToolStart;
@@ -75,9 +83,13 @@ class AgentTurnResult {
     required this.usageIsExact,
     required this.backups,
     this.aborted = false,
+    this.reasoning = '',
   });
 
   final String text;
+
+  /// 模型的思考过程（DeepSeek-R1 等）。空串表示该模型不返回。
+  final String reasoning;
   final List<ToolCallRecord> toolCalls;
 
   /// 所有轮次累加
@@ -161,6 +173,7 @@ class AgentRunner {
     final collected = <ToolCallRecord>[];
     final backups = <WriteBackup>[];
     final textBuf = StringBuffer();
+    final reasoningBuf = StringBuffer();
 
     var totalPrompt = 0;
     var totalCompletion = 0;
@@ -200,8 +213,16 @@ class AgentRunner {
         accumulator: acc,
         tools: toolSchemas,
         onDelta: callbacks.onTextDelta,
+        onReasoningDelta: callbacks.onReasoningDelta,
         cancelToken: cancelToken,
       );
+
+      // 本回合的思考内容。多轮工具循环里每轮都可能带思考，
+      // 这里累积起来，最终供 ChatEntry 保存与 UI 折叠展示。
+      if (acc.hasReasoning) {
+        reasoningBuf.write(acc.reasoning);
+        callbacks.onReasoningDone?.call();
+      }
 
       // usage：服务端给了就是精确值
       if (acc.promptTokens != null || acc.completionTokens != null) {
@@ -231,6 +252,15 @@ class AgentRunner {
       ));
 
       for (final call in calls) {
+        // 每个工具执行前都检查取消。
+        //
+        // 为什么必须在这里查：`streamChat` 只在收分片时检查取消，
+        // 而工具执行阶段没有任何网络活动。用户点了停止之后，
+        // 模型排队的 6 个工具**仍会依次跑完** —— 其中包括 write_post
+        // 写盘。现象是「点了停止，界面不动了，但文件还是被改了」，
+        // 比单纯的停不下来更糟。
+        cancelToken?.throwIfCancelled();
+
         final tool = _findTool(call.name);
         final args = tryDecodeArgs(call.arguments) ?? const {};
 
@@ -305,6 +335,7 @@ class AgentRunner {
               usageIsExact: exact,
               backups: backups,
               aborted: true,
+              reasoning: reasoningBuf.toString(),
             );
           }
 
@@ -404,6 +435,7 @@ class AgentRunner {
       completionTokens: totalCompletion,
       usageIsExact: exact,
       backups: backups,
+      reasoning: reasoningBuf.toString(),
     );
   }
 

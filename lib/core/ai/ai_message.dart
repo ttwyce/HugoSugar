@@ -129,12 +129,29 @@ class StreamAccumulator {
   final StringBuffer _content = StringBuffer();
   final Map<int, _PartialCall> _calls = {};
 
+  /// 推理过程（DeepSeek-R1 / 各类 R1 兼容实现）。
+  ///
+  /// 协议事实：DeepSeek 把思考内容放在 `delta.reasoning_content`，
+  /// 与正文 `delta.content` **并行下发**，两者都是流式增量。
+  /// 硅基流动、vLLM、各类中转站的 R1 实现都跟随这个字段 ——
+  /// 所以按字段适配，不按模型名硬编码，换端点不用改代码。
+  ///
+  /// 注意：OpenAI o1/o3 是**不返回**思考内容的（只返回 `reasoning_effort`
+  /// 参数，正文里没有），所以那边这个字段会一直是空。
+  /// 空的时候 UI 不显示思考区，行为与以前一致。
+  final StringBuffer _reasoning = StringBuffer();
+
   /// 服务端返回的用量（部分实现才有）
   int? promptTokens;
   int? completionTokens;
   String? finishReason;
 
   String get content => _content.toString();
+
+  /// 思考过程全文。空串表示该模型没有返回思考内容。
+  String get reasoning => _reasoning.toString();
+
+  bool get hasReasoning => _reasoning.isNotEmpty;
 
   List<AiToolCall> get toolCalls {
     final idx = _calls.keys.toList()..sort();
@@ -172,6 +189,18 @@ class StreamAccumulator {
 
     final c = delta['content'];
     if (c is String) _content.write(c);
+
+    // 思考过程。与 content 并行下发，同样按增量拼接。
+    //
+    // 三种写法都要认，因为不同实现的字段位置有差异：
+    //   1. delta.reasoning_content  —— DeepSeek 官方 / 硅基流动 / vLLM
+    //   2. delta.reasoning          —— 部分中转站和 OpenRouter
+    //   3. delta.thinking           —— Anthropic 风格的兼容层
+    // 全部拿不到就当作「该模型不返回思考内容」，静默跳过。
+    final r = delta['reasoning_content'] ??
+        delta['reasoning'] ??
+        delta['thinking'];
+    if (r is String && r.isNotEmpty) _reasoning.write(r);
 
     final calls = delta['tool_calls'];
     if (calls is! List) return;

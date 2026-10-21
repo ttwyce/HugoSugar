@@ -63,6 +63,10 @@ class AiController extends ChangeNotifier {
   String? _streamingText;
   String? get streamingText => _streamingText;
 
+  /// 当前流式输出的思考过程（null = 无思考内容）
+  String? _streamingReasoning;
+  String? get streamingReasoning => _streamingReasoning;
+
   bool _busy = false;
   bool get busy => _busy;
 
@@ -367,6 +371,7 @@ class AiController extends ChangeNotifier {
 
     _busy = true;
     _streamingText = '';
+    _streamingReasoning = null;
     _lastError = null;
     _runningTool = null;
     notifyListeners();
@@ -428,6 +433,12 @@ class AiController extends ChangeNotifier {
             _streamingText = streamed.toString();
             notifyListeners();
           },
+          // 思考过程。模型不返回就一次都不会触发，
+          // 那时 _streamingReasoning 保持 null，UI 不显示思考区。
+          onReasoningDelta: (d) {
+            _streamingReasoning = (_streamingReasoning ?? '') + d;
+            notifyListeners();
+          },
           onToolStart: (name, args) {
             _runningTool = name;
             notifyListeners();
@@ -458,6 +469,7 @@ class AiController extends ChangeNotifier {
         // 服务端给了 usage 才是真值，否则是估算。
         // 界面必须能区分，不能把估算当账单展示。
         usageIsExact: result.usageIsExact,
+        reasoning: result.reasoning,
       );
 
       final s = _session!;
@@ -493,6 +505,7 @@ class AiController extends ChangeNotifier {
     } finally {
       _busy = false;
       _streamingText = null;
+      _streamingReasoning = null;
       _runningTool = null;
       _activeCancel = null;
       _sessions = await _chatStore?.listAll() ?? const [];
@@ -763,6 +776,10 @@ class AiController extends ChangeNotifier {
       text: text.trim().isEmpty ? '（已取消）' : '$text\n\n_(已取消)_',
       at: DateTime.now(),
       toolCalls: toolCalls,
+      // 取消时也保留已经产生的思考内容：
+      // 用户点停止往往是因为「想看的已经看到了」，
+      // 而思考过程恰恰是判断模型思路的关键。
+      reasoning: _streamingReasoning ?? '',
     );
     final updated = s.copyWith(
       entries: [...s.entries, entry],
@@ -858,7 +875,24 @@ String _buildSystemPrompt() {
             .toList();
       },
       listPosts: () => posts
-          .map((p) => (path: p.relativePath, title: p.title))
+          // 必须给**相对 content 目录**的路径。
+          //
+          // PostDocument.relativePath 是相对仓库根的
+          // （content/posts/a.md），而 write_post 的 path_guard
+          // 基准是 content 目录。两边不一致的后果是：
+          // 模型照抄它看到的路径去写，_writePostContent 再拼一次
+          // content/，最终落到 content/content/posts/a.md ——
+          // 文件确实写成功了（审批里也显示成功），
+          // 但 _refreshPosts 扫的是 content/posts，永远看不到它。
+          //
+          // 表现就是「AI 说写好了，文章列表里没有」。
+          .map((p) => (
+                path: pkg.posix.relative(
+                  p.relativePath.replaceAll('\\', '/'),
+                  from: 'content',
+                ),
+                title: p.title,
+              ))
           .toList(),
       readPost: _readPostContent,
       writePost: _writePostContent,
@@ -867,14 +901,23 @@ String _buildSystemPrompt() {
     ).build();
   }
 
+  /// 读文章内容（审批 Diff + 回滚备份都走这里）。
+  ///
+  /// 路径基准与 [write_post] 的 path_guard 一致：**相对 content 目录**。
+  /// 同时兼容 `content/posts/a.md` 这种带 content 前缀的历史写法 ——
+  /// 早期 listPosts 给的就是这种，旧会话里还留着。
   Future<String?> _readPostContent(String relPath) async {
     final root = siteController?.repoPath;
     if (root == null) return null;
     final cleaned = relPath.replaceAll('\\', '/');
-    for (final candidate in [
-      pkg.join(root, cleaned),
+
+    // content 基准优先；带前缀的写法其次
+    final candidates = <String>[
       pkg.join(root, 'content', cleaned),
-    ]) {
+      pkg.join(root, cleaned),
+    ];
+
+    for (final candidate in candidates) {
       final f = File(candidate);
       if (await f.exists()) return f.readAsString();
     }
@@ -884,7 +927,16 @@ String _buildSystemPrompt() {
   Future<void> _writePostContent(String relPath, String content) async {
     final root = siteController?.repoPath;
     if (root == null) throw StateError('站点未就绪');
-    final abs = pkg.join(root, 'content', relPath.replaceAll('\\', '/'));
+
+    // 与 path_guard 保持同一基准：相对 content。
+    // 若模型仍传了 `content/xxx`（旧会话残留的写法），剥掉前缀，
+    // 否则会写出 content/content/xxx。
+    var cleaned = relPath.replaceAll('\\', '/');
+    if (cleaned.startsWith('content/')) {
+      cleaned = cleaned.substring('content/'.length);
+    }
+
+    final abs = pkg.join(root, 'content', cleaned);
     final f = File(abs);
     await f.parent.create(recursive: true);
     await f.writeAsString(content, flush: true);

@@ -43,9 +43,27 @@ String? validatePostPath({
 /// 公网 URL → 302 到 `http://127.0.0.1:8080`。
 /// 只在第一跳检查的话这个绕法完全有效。
 ///
+/// ## 为什么允许 http
+///
+/// 早期这里是 `if (uri.scheme != 'https') return '只允许 https'`。
+/// 结果是大量 2000 年代的中文站点（比如各种老资料站、BBS 存档）
+/// 完全抓不了 —— 它们只提供 http，没有证书，也不会升级。
+///
+/// **关键认识：SSRF 的风险不在协议，在目标地址。**
+/// 真正危险的是「让服务器去访问自己内网的 127.0.0.1 / 10.x / 192.168.x」，
+/// 而这一点由下面的 [isPrivateAddress] 独立负责，与 http/https 无关。
+/// 只认 https 是一种「看起来安全」的省事做法：
+/// 攻击者手上只要有一个 https 域名，照样能打；
+/// 而正常用户抓老站则被完全挡住。
+///
+/// 明文传输的残留风险（内容被中间人篡改）对「抓一篇文章给模型看」
+/// 这个场景可以接受 —— 模型本来就会被告知不要相信网页里的指令。
+///
 /// 返回 null 表示通过。
 String? validateFetchUrl(Uri uri) {
-  if (uri.scheme != 'https') return '只允许 https';
+  if (uri.scheme != 'http' && uri.scheme != 'https') {
+    return '只支持 http / https';
+  }
 
   final host = uri.host.toLowerCase();
   if (host.isEmpty) return '地址缺少主机名';

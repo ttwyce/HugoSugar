@@ -8,6 +8,7 @@ import 'ai_endpoints_page.dart';
 import 'model_switcher_sheet.dart';
 import 'write_approval_sheet.dart';
 import 'chat_markdown.dart';
+import 'thinking_block.dart';
 
 /// AI 对话页。
 ///
@@ -154,6 +155,7 @@ class _ChatPageState extends State<ChatPage> {
                             return _StreamingBubble(
                               text: ctrl.streamingText ?? '',
                               runningTool: ctrl.runningTool,
+                              reasoning: ctrl.streamingReasoning,
                             );
                           },
                         ),
@@ -821,6 +823,10 @@ class _EntryView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 历史里的思考过程：默认收起，点开看全文。
+        // 放在消息体上方，与流式时的顺序保持一致。
+        if (!e.isUser && e.reasoning.trim().isNotEmpty)
+          ThinkingBlock(text: e.reasoning),
         Container(
           padding: const EdgeInsets.all(AppSpace.sm),
           decoration: BoxDecoration(
@@ -973,10 +979,17 @@ class _ToolStripState extends State<_ToolStrip> {
 }
 
 class _StreamingBubble extends StatelessWidget {
-  const _StreamingBubble({required this.text, required this.runningTool});
+  const _StreamingBubble({
+    required this.text,
+    required this.runningTool,
+    this.reasoning,
+  });
 
   final String text;
   final String? runningTool;
+
+  /// 思考过程。null 或空表示该模型不返回思考内容。
+  final String? reasoning;
 
   @override
   Widget build(BuildContext context) {
@@ -1007,6 +1020,8 @@ class _StreamingBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (reasoning != null && reasoning!.trim().isNotEmpty)
+                    ThinkingBlock(text: reasoning!, streaming: true),
                   if (runningTool != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -1271,7 +1286,13 @@ class _InputBar extends StatelessWidget {
                 controller: controller,
                 minLines: 1,
                 maxLines: 5,
-                enabled: !busy,
+                // 生成中也允许打字。
+                //
+                // 之前是 enabled: !busy，理由是「避免用户在等待时误发」。
+                // 但实际体验很差：模型输出要几十秒，这段时间用户
+                // 既不能整理思路，也不能先打好下一句 —— 而打字
+                // 根本不会干扰正在进行的那一轮（发送按钮此时是停止键）。
+                // 真正需要防的是「误触发送」，那由按钮状态负责。
                 style: TextStyle(fontSize: 14, color: c.textPrimary),
                 decoration: const InputDecoration(hintText: '说点什么…'),
               ),

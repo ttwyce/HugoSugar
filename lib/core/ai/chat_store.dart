@@ -97,6 +97,7 @@ class ChatEntry {
     this.promptTokens,
     this.completionTokens,
     this.usageIsExact = false,
+    this.reasoning = '',
     this.toolTokensEstimated = 0,
   });
 
@@ -121,6 +122,13 @@ class ChatEntry {
   /// 否则用户会把它当账单数字。
   final bool usageIsExact;
 
+  /// 模型的思考过程（DeepSeek-R1 等推理模型才有）。
+  ///
+  /// 存下来的理由：思考过程往往解释了模型为什么那样写文章
+  /// （比如「先看看已有文章的格式」），事后回看很有价值。
+  /// 空串表示该模型不返回思考内容 —— 界面据此决定是否显示折叠区。
+  final String reasoning;
+
   /// 工具结果注入后额外增加的 token（估算）
   final int toolTokensEstimated;
 
@@ -134,6 +142,7 @@ class ChatEntry {
     int? promptTokens,
     int? completionTokens,
     bool? usageIsExact,
+    String? reasoning,
     int? toolTokensEstimated,
   }) {
     return ChatEntry(
@@ -146,6 +155,7 @@ class ChatEntry {
       promptTokens: promptTokens ?? this.promptTokens,
       completionTokens: completionTokens ?? this.completionTokens,
       usageIsExact: usageIsExact ?? this.usageIsExact,
+      reasoning: reasoning ?? this.reasoning,
       toolTokensEstimated: toolTokensEstimated ?? this.toolTokensEstimated,
     );
   }
@@ -162,6 +172,7 @@ class ChatEntry {
         if (promptTokens != null) 'promptTokens': promptTokens,
         if (completionTokens != null) 'completionTokens': completionTokens,
         if (usageIsExact) 'usageIsExact': true,
+        if (reasoning.isNotEmpty) 'reasoning': reasoning,
         if (toolTokensEstimated > 0)
           'toolTokensEstimated': toolTokensEstimated,
       };
@@ -200,6 +211,7 @@ class ChatEntry {
       promptTokens: (j['promptTokens'] as num?)?.toInt(),
       completionTokens: (j['completionTokens'] as num?)?.toInt(),
       usageIsExact: j['usageIsExact'] as bool? ?? false,
+      reasoning: j['reasoning'] as String? ?? '',
       toolTokensEstimated: (j['toolTokensEstimated'] as num?)?.toInt() ?? 0,
     );
   }

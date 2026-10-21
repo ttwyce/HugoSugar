@@ -178,6 +178,7 @@ class AiClient {
     required StreamAccumulator accumulator,
     List<Map<String, dynamic>> tools = const [],
     void Function(String delta)? onDelta,
+    void Function(String delta)? onReasoningDelta,
     Duration timeout = const Duration(seconds: 60),
     CancelToken? cancelToken,
   }) async {
@@ -262,11 +263,24 @@ class AiClient {
             throw AiException(AiErrorKind.serverError, msg);
           }
 
-          final before = accumulator.content;
+          final beforeContent = accumulator.content;
+          final beforeReasoning = accumulator.reasoning;
           accumulator.addChunk(json);
-          final after = accumulator.content;
-          if (after.length > before.length && onDelta != null) {
-            onDelta(after.substring(before.length));
+          final afterContent = accumulator.content;
+          final afterReasoning = accumulator.reasoning;
+
+          if (afterContent.length > beforeContent.length && onDelta != null) {
+            onDelta(afterContent.substring(beforeContent.length));
+          }
+          // 思考内容的增量单独推。
+          //
+          // 为什么要单独一路：正文和思考是两条并行流，
+          // 用同一个回调会把「正在思考」和「正在作答」揉在一起，
+          // UI 就没法分区渲染了。思考通常先来、且量大，
+          // 混在一起会让正文区先刷出一大段灰字再被清掉。
+          if (afterReasoning.length > beforeReasoning.length &&
+              onReasoningDelta != null) {
+            onReasoningDelta(afterReasoning.substring(beforeReasoning.length));
           }
         }
       }

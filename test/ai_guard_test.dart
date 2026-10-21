@@ -83,13 +83,56 @@ void main() {
     });
   });
 
+  group('路径基准一致性（AI 写文章不出现的原因）', () {
+    const root = '/srv/repo/content';
+
+    test('相对 content 的路径通过', () {
+      // listPosts 现在给模型的就是这种形状
+      expect(
+        validatePostPath(contentDirAbs: root, relPath: 'posts/a.md'),
+        isNull,
+      );
+    });
+
+    test('content/posts/a.md 会被算成越界或另立目录', () {
+      // 这是本次修复的根因：模型照抄旧格式写，落到
+      // content/content/posts/a.md，列表永远看不到。
+      // path_guard 本身不拒绝它（它仍在 content 下，是一个子目录），
+      // 所以防线在 _writePostContent 里剥前缀 —— 这里记录契约：
+      // **调用方必须传相对 content 的路径**。
+      final r = validatePostPath(
+        contentDirAbs: root,
+        relPath: 'content/posts/a.md',
+      );
+      expect(r, isNull, reason: '不在 content 外，所以 guard 放行');
+    });
+
+    test('越界仍然被拦', () {
+      expect(
+        validatePostPath(contentDirAbs: root, relPath: '../secret.md'),
+        isNotNull,
+      );
+    });
+  });
+
   group('validateFetchUrl', () {
     test('https 公网地址通过', () {
       expect(validateFetchUrl(Uri.parse('https://example.com/a')), isNull);
     });
 
-    test('拒绝 http', () {
-      expect(validateFetchUrl(Uri.parse('http://example.com')), isNotNull);
+    // 用户明确要求「HTTP 抓取默认开启」。
+    // 大量 2000 年代的中文站点只有 http，拒绝等于抓不到。
+    // SSRF 的防线在下方的内网地址检查，与协议无关。
+    test('允许 http（老站点只提供 http）', () {
+      expect(validateFetchUrl(Uri.parse('http://example.com')), isNull);
+    });
+
+    test('http 仍然拦截内网地址', () {
+      // 协议放开了，但「访问内网」这条红线不能松
+      expect(validateFetchUrl(Uri.parse('http://127.0.0.1/')), isNotNull);
+      expect(validateFetchUrl(Uri.parse('http://192.168.1.1/')), isNotNull);
+      expect(validateFetchUrl(Uri.parse('http://localhost/')), isNotNull);
+      expect(validateFetchUrl(Uri.parse('http://10.0.0.1/')), isNotNull);
     });
 
     test('拒绝 file 协议', () {
