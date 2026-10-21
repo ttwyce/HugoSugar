@@ -4,10 +4,67 @@ import 'package:hugosugar/core/ai/ai_message.dart';
 import 'package:hugosugar/core/ai/context_compressor.dart';
 
 void main() {
-  group('ThinkingMode 序列化', () {
-    test('默认是 none', () {
+  group('ThinkingLevel 档位', () {
+    test('none 表示不思考', () {
+      expect(ThinkingLevel.none.isThinking, isFalse);
+    });
+
+    test('其余档位都算思考', () {
+      expect(ThinkingLevel.low.isThinking, isTrue);
+      expect(ThinkingLevel.medium.isThinking, isTrue);
+      expect(ThinkingLevel.high.isThinking, isTrue);
+      expect(ThinkingLevel.xhigh.isThinking, isTrue);
+    });
+
+    test('effortValue 映射：xhigh 降级为 high', () {
+      expect(ThinkingLevel.low.effortValue, 'low');
+      expect(ThinkingLevel.medium.effortValue, 'medium');
+      expect(ThinkingLevel.high.effortValue, 'high');
+      // xhigh 不在 o 系列允许值内，降级而不是报 400
+      expect(ThinkingLevel.xhigh.effortValue, 'high');
+    });
+
+    test('fromId 往返', () {
+      for (final v in ThinkingLevel.values) {
+        expect(ThinkingLevel.fromId(v.id), v);
+      }
+    });
+
+    test('未知 id 回落到 none', () {
+      expect(ThinkingLevel.fromId('whatever'), ThinkingLevel.none);
+      expect(ThinkingLevel.fromId(null), ThinkingLevel.none);
+    });
+  });
+
+  group('ThinkingProtocol 协议', () {
+    test('只有 reasoningEffort 支持档位', () {
+      expect(ThinkingProtocol.reasoningEffort.supportsLevels, isTrue);
+      expect(ThinkingProtocol.enableThinking.supportsLevels, isFalse);
+      expect(ThinkingProtocol.alwaysOn.supportsLevels, isFalse);
+      expect(ThinkingProtocol.off.supportsLevels, isFalse);
+    });
+
+    test('只有 alwaysOn / enableThinking 会返回思考内容', () {
+      expect(ThinkingProtocol.alwaysOn.returnsReasoning, isTrue);
+      expect(ThinkingProtocol.enableThinking.returnsReasoning, isTrue);
+      // o 系列不返回思考内容
+      expect(ThinkingProtocol.reasoningEffort.returnsReasoning, isFalse);
+      expect(ThinkingProtocol.off.returnsReasoning, isFalse);
+    });
+
+    test('兼容旧 id：parse_only -> alwaysOn', () {
+      expect(ThinkingProtocol.fromId('parse_only'), ThinkingProtocol.alwaysOn);
+    });
+
+    test('未知 id 回落到 off', () {
+      expect(ThinkingProtocol.fromId('bogus'), ThinkingProtocol.off);
+    });
+  });
+
+  group('AiEndpoint 序列化', () {
+    test('默认协议是 off', () {
       const ep = AiEndpoint(id: 'a', name: 'n', baseUrl: 'https://x');
-      expect(ep.thinkingMode, ThinkingMode.none);
+      expect(ep.thinkingProtocol, ThinkingProtocol.off);
     });
 
     test('toJson / fromJson 往返不丢', () {
@@ -15,37 +72,20 @@ void main() {
         id: 'a',
         name: 'n',
         baseUrl: 'https://x',
-        thinkingMode: ThinkingMode.enableThinking,
+        thinkingProtocol: ThinkingProtocol.enableThinking,
       );
       final back = AiEndpoint.fromJson(ep.toJson());
-      expect(back.thinkingMode, ThinkingMode.enableThinking);
+      expect(back.thinkingProtocol, ThinkingProtocol.enableThinking);
     });
 
-    test('旧配置缺字段回落到 none', () {
+    test('旧配置文件（字段名 thinkingMode）能读', () {
       final back = AiEndpoint.fromJson({
         'id': 'a',
         'name': 'n',
         'baseUrl': 'https://x',
+        'thinkingMode': 'reasoning_effort',
       });
-      expect(back.thinkingMode, ThinkingMode.none);
-    });
-
-    test('未知值回落到 none，不抛异常', () {
-      final back = AiEndpoint.fromJson({
-        'id': 'a',
-        'name': 'n',
-        'baseUrl': 'https://x',
-        'thinkingMode': 'something_new',
-      });
-      expect(back.thinkingMode, ThinkingMode.none);
-    });
-
-    test('只有 parseOnly / enableThinking 会显示思考内容', () {
-      expect(ThinkingMode.parseOnly.showsReasoning, isTrue);
-      expect(ThinkingMode.enableThinking.showsReasoning, isTrue);
-      // o 系列不返回思考内容
-      expect(ThinkingMode.reasoningEffort.showsReasoning, isFalse);
-      expect(ThinkingMode.none.showsReasoning, isFalse);
+      expect(back.thinkingProtocol, ThinkingProtocol.reasoningEffort);
     });
   });
 
@@ -75,26 +115,13 @@ void main() {
       expect(a.hasReasoning, isTrue);
     });
 
-    test('兼容 reasoning 字段（OpenRouter 等）', () {
-      final a = accOf([
-        delta({'reasoning': '思考中'}),
-        delta({'content': '答'}),
-      ]);
-      expect(a.reasoning, '思考中');
+    test('兼容 reasoning / thinking 字段', () {
+      expect(accOf([delta({'reasoning': '思考中'})]).reasoning, '思考中');
+      expect(accOf([delta({'thinking': '想想'})]).reasoning, '想想');
     });
 
-    test('兼容 thinking 字段（Anthropic 风格）', () {
-      final a = accOf([
-        delta({'thinking': '想想'}),
-        delta({'content': '答'}),
-      ]);
-      expect(a.reasoning, '想想');
-    });
-
-    test('普通模型没有思考内容时 reasoning 为空', () {
-      final a = accOf([
-        delta({'content': '直接回答'}),
-      ]);
+    test('普通模型没有思考内容', () {
+      final a = accOf([delta({'content': '直接回答'})]);
       expect(a.reasoning, isEmpty);
       expect(a.hasReasoning, isFalse);
     });
@@ -106,6 +133,13 @@ void main() {
       ]);
       expect(a.reasoning, 'R1R2');
       expect(a.content, 'C1C2');
+    });
+
+    test('reset 清空一切（重试用）', () {
+      final a = accOf([delta({'reasoning_content': '想', 'content': '答'})]);
+      a.reset();
+      expect(a.reasoning, isEmpty);
+      expect(a.content, isEmpty);
     });
   });
 
@@ -119,7 +153,7 @@ void main() {
       expect(c.compress(msgs).compressed, isFalse);
     });
 
-    test('超过阈值触发压缩，并保留最近 N 条', () {
+    test('超过阈值触发压缩', () {
       final c = const ContextCompressor(maxMessages: 10, keepRecent: 4);
       final msgs = List.generate(
         12,
@@ -128,12 +162,10 @@ void main() {
       final r = c.compress(msgs);
       expect(r.compressed, isTrue);
       expect(r.droppedCount, greaterThan(0));
-      // 压缩后总条数应显著减少
       expect(r.messages.length, lessThan(msgs.length));
     });
 
-    test('保留数 >= 阈值时不压缩（避免压完反而更长）', () {
-      // 这是 ContextCompressor 里 needsCompression 的前提条件
+    test('保留数 >= 阈值时不压缩', () {
       final c = const ContextCompressor(maxMessages: 5, keepRecent: 8);
       final msgs = List.generate(
         6,

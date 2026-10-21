@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/ai/agent_runner.dart';
 import '../../core/ai/ai_controller.dart';
+import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/chat_store.dart';
 import 'ai_endpoints_page.dart';
 import 'model_switcher_sheet.dart';
@@ -184,6 +185,9 @@ class _ChatPageState extends State<ChatPage> {
                   threshold: ctrl.settings?.aiCompressThreshold ?? 20,
                   compressed: ctrl.lastCompressed,
                   onContextTap: _showContextDetail,
+                  thinkingLevel: ctrl.thinkingLevel,
+                  thinkingHint: ctrl.thinkingHint,
+                  onThinkingTap: _pickThinkingLevel,
                 ),
                 _InputBar(
                   controller: _input,
@@ -193,6 +197,82 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// 选择思考档位。
+  ///
+  /// 每个档位都附带一句「实际会发生什么」，因为
+  /// none/low 在开关式协议上完全等价 —— 不说清楚，
+  /// 用户会以为选了没反应是 bug。
+  void _pickThinkingLevel() {
+    final ctrl = widget.controller;
+    final hint = ctrl.thinkingHint;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        final c = sheetCtx.appColors;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      '思考档位',
+                      style: TextStyle(fontSize: 13, color: c.textSecondary),
+                    ),
+                    const Spacer(),
+                    Text(
+                      ctrl.thinkingProtocol.label,
+                      style: TextStyle(fontSize: 11, color: c.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
+              if (hint != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 12, color: c.warning),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          hint,
+                          style: TextStyle(fontSize: 11, color: c.warning),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              for (final lv in ThinkingLevel.values)
+                ListTile(
+                  leading: Icon(
+                    ctrl.thinkingLevel == lv
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: ctrl.thinkingLevel == lv ? c.accent : c.textTertiary,
+                  ),
+                  title: Text(lv.label, style: const TextStyle(fontSize: 14)),
+                  subtitle: Text(
+                    lv.description,
+                    style: TextStyle(fontSize: 11, color: c.textTertiary),
+                  ),
+                  onTap: () {
+                    ctrl.setThinkingLevel(lv);
+                    Navigator.of(sheetCtx).pop();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1184,6 +1264,9 @@ class _ModelBar extends StatelessWidget {
     required this.threshold,
     required this.compressed,
     required this.onContextTap,
+    required this.thinkingLevel,
+    required this.thinkingHint,
+    required this.onThinkingTap,
   });
 
   final String label;
@@ -1200,6 +1283,14 @@ class _ModelBar extends StatelessWidget {
   final bool compressed;
 
   final VoidCallback onContextTap;
+
+  /// 当前思考档位
+  final ThinkingLevel thinkingLevel;
+
+  /// 档位在当前端点上是否生效（null = 生效）
+  final String? thinkingHint;
+
+  final VoidCallback onThinkingTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1253,6 +1344,11 @@ class _ModelBar extends StatelessWidget {
               threshold: threshold,
               compressed: compressed,
               onTap: onContextTap,
+            ),
+            _ThinkingChip(
+              level: thinkingLevel,
+              hint: thinkingHint,
+              onTap: onThinkingTap,
             ),
           ],
         ),
@@ -1335,6 +1431,68 @@ class _ContextMeter extends StatelessWidget {
                 color: compressed ? c.danger : c.textTertiary,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 思考档位按钮 + 选择器。
+///
+/// 放在对话页而不是设置页，因为它是**每一轮都可能变**的选项：
+/// 这一句想问深一点，下一句只是查个事实。放进设置页意味着
+/// 每次调整都要离开对话、翻三层菜单，没人会那样用。
+///
+/// 档位和协议分开表达：用户看到的是「深度/平衡/轻量」，
+/// 协议（enable_thinking 还是 reasoning_effort）由端点决定。
+class _ThinkingChip extends StatelessWidget {
+  const _ThinkingChip({
+    required this.level,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final ThinkingLevel level;
+
+  /// 非 null 表示当前端点无法完整表达这个档位
+  final String? hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final active = level.isThinking;
+    // 端点不支持时用灰色，避免让人以为已经生效
+    final effective = hint == null;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 3, bottom: 2),
+        child: Row(
+          children: [
+            Icon(
+              active ? Icons.psychology : Icons.psychology_outlined,
+              size: 10,
+              color: effective
+                  ? (active ? c.accent : c.textTertiary)
+                  : c.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '思考：${level.label}',
+              style: TextStyle(
+                fontSize: 10,
+                color: effective
+                    ? (active ? c.accent : c.textTertiary)
+                    : c.textTertiary,
+              ),
+            ),
+            if (!effective) ...[
+              const SizedBox(width: 3),
+              Icon(Icons.info_outline, size: 9, color: c.textTertiary),
+            ],
           ],
         ),
       ),

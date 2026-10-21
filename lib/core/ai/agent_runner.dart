@@ -157,6 +157,9 @@ class AgentRunner {
     String systemPrompt = '',
     List<Map<String, dynamic>> extraTools = const [],
     CancelToken? cancelToken,
+
+    /// 本轮思考档位，由 UI 选择，透传给 client
+    ThinkingLevel thinkingLevel = ThinkingLevel.medium,
   }) async {
     final messages = <AiMessage>[];
     if (systemPrompt.trim().isNotEmpty) {
@@ -215,6 +218,7 @@ class AgentRunner {
         onDelta: callbacks.onTextDelta,
         onReasoningDelta: callbacks.onReasoningDelta,
         cancelToken: cancelToken,
+        thinkingLevel: thinkingLevel,
       );
 
       // 本回合的思考内容。多轮工具循环里每轮都可能带思考，
@@ -317,6 +321,9 @@ class AgentRunner {
           // 只读一次，避免两处不一致。
           final oldContent = await _readExisting(path);
 
+          // 弹窗打开前再查一次：读文件也要时间，这期间用户可能已经点了停止。
+          cancelToken?.throwIfCancelled();
+
           final decision = await callbacks.requestApproval(
             ApprovalRequest(
               toolName: call.name,
@@ -325,6 +332,11 @@ class AgentRunner {
               oldContent: oldContent,
             ),
           );
+
+          // 用户可能在弹窗上点「停止」而不是「取消」——
+          // 弹窗是 UI 层模态，不会因取消令牌自动关闭，
+          // 所以这里必须再看一眼：点了停止就不该继续写盘。
+          cancelToken?.throwIfCancelled();
 
           if (decision == ApprovalDecision.abort) {
             return AgentTurnResult(

@@ -86,6 +86,44 @@ class AiController extends ChangeNotifier {
   /// 当前请求的取消令牌（null = 没有进行中的请求）
   CancelToken? _activeCancel;
 
+  /// 本轮对话的思考档位。
+  ///
+  /// 放 controller 而不是 AppSettings，因为它的生命周期是「这段对话」：
+  /// 用户可能这一轮想深想，下一轮只想快答。跨对话沿用会让人困惑
+  /// （「我明明关了它怎么还在想」）。
+  ///
+  /// 默认 medium：多数任务的合理起点。
+  ThinkingLevel _thinkingLevel = ThinkingLevel.medium;
+  ThinkingLevel get thinkingLevel => _thinkingLevel;
+
+  /// 切换档位。不打断正在进行的生成 ——
+  /// 已经发出去的请求带的是旧档位，改这个只影响下一轮。
+  void setThinkingLevel(ThinkingLevel level) {
+    if (_thinkingLevel == level) return;
+    _thinkingLevel = level;
+    notifyListeners();
+  }
+
+  /// 当前端点用哪种思考协议。
+  ThinkingProtocol get thinkingProtocol =>
+      activeEndpoint?.thinkingProtocol ?? ThinkingProtocol.off;
+
+  /// 档位在这个端点上是否真的生效。
+  ///
+  /// 三种「不生效」必须区分对待，否则用户会以为功能坏了：
+  /// - 端点不支持思考：选了也没用
+  /// - 总是思考（R1）：关不掉
+  /// - 开关式：能开关，但不能调深浅
+  String? get thinkingHint {
+    final p = thinkingProtocol;
+    if (p == ThinkingProtocol.off) return '当前端点不支持思考';
+    if (p == ThinkingProtocol.alwaysOn) return '当前模型总是思考，无法关闭';
+    if (p == ThinkingProtocol.enableThinking) {
+      return '当前端点只能开关，选轻量或深度效果相同';
+    }
+    return null;
+  }
+
   /// 上下文压缩器。用设置里的阈值构造，见 [_compressorOf]。
   ContextCompressor _compressorOf() {
     final st = settings;
@@ -160,7 +198,7 @@ class AiController extends ChangeNotifier {
     required String baseUrl,
     String model = '',
     String apiKey = '',
-    ThinkingMode thinkingMode = ThinkingMode.none,
+    ThinkingProtocol thinkingProtocol = ThinkingProtocol.off,
   }) async {
     final id = 'ep_${DateTime.now().microsecondsSinceEpoch}';
     final ep = AiEndpoint(
@@ -169,7 +207,7 @@ class AiController extends ChangeNotifier {
       baseUrl: baseUrl.trim(),
       model: model.trim(),
       keyHint: apiKey.isEmpty ? '' : AiKeyStore.mask(apiKey),
-      thinkingMode: thinkingMode,
+      thinkingProtocol: thinkingProtocol,
     );
 
     _config = _config.copyWith(
@@ -373,6 +411,16 @@ class AiController extends ChangeNotifier {
     String userText, {
     required Future<ApprovalDecision?> Function(ApprovalRequest req)
         onApproval,
+
+    /// 覆盖「喂给模型的历史」，只影响这一轮，不写入 session。
+    ///
+    /// 用于「再生成」：界面上要保留旧回答（让用户对比），
+    /// 但旧回答不能作为历史发给模型 ——
+    /// 模型会把它当成「别人已经回答过了」，然后倾向于补充/改写，
+    /// 输出会和旧的几乎一模一样，等于白重答一次。
+    ///
+    /// 传 null 表示正常行为（用当前 session 的历史）。
+    List<ChatEntry>? historyEntries,
   }) async {
     if (_busy) return false;
 
@@ -420,6 +468,14 @@ class AiController extends ChangeNotifier {
 
     // 记下用户消息（先落盘，避免中途崩溃丢失输入）
     final s0 = _session!;
+
+    // 历史来源：默认用当前 session；再生成时由调用方传入
+    // 「不含旧回答」的版本。s0 仍用于写盘，
+    // historyEntries 只影响发给模型的内容。
+    final historySource = historyEntries == null
+        ? s0
+        : s0.copyWith(entries: historyEntries);
+
     final withUser = s0.copyWith(
       entries: [
         ...s0.entries,
@@ -443,7 +499,7 @@ class AiController extends ChangeNotifier {
     //
     // withUser 里已经有这条 user 消息了，而 AgentRunner.run 会在末尾
     // 再补一条 —— 直接传 withUser 会让模型收到两遍同样的问题。
-    final rawMessages = s0.toApiMessages();
+    final rawMessages = historySource.toApiMessages();
     final compressed = _compressorOf().compress(rawMessages);
     _lastCompressed = compressed.compressed;
     _lastDroppedCount = compressed.droppedCount;
@@ -472,6 +528,7 @@ class AiController extends ChangeNotifier {
         userText: text,
         systemPrompt: systemPrompt,
         cancelToken: cancelToken,
+        thinkingLevel: _thinkingLevel,
         callbacks: AgentCallbacks(
           onTextDelta: (d) {
             streamed.write(d);
@@ -639,27 +696,28 @@ class AiController extends ChangeNotifier {
     await recallFromEntry(entry, rollbackFiles: true);
     return send(text, onApproval: onApproval);
   }
-
   /// 对同一条提问再生成一次回答，保留之前的回答。
   ///
-  /// ## 与 resend 的区别（关键，两者语义不同）
+  /// ## 与 resend 的区别（这是本方法的全部意义）
   ///
-  /// - resend：删除旧回答，并回滚文件。适合「答得不好，要替换」。
-  /// - regenerate：保留旧回答，不回滚文件。适合「想比较几种写法」。
+  /// | 操作 | 旧回答 | 回滚文件 |
+  /// |---|---|---|
+  /// | resend | 删除 | 一并回滚 |
+  /// | regenerate | 保留 | 不动 |
   ///
-  /// 为什么不回滚文件：旧回答写的文章还在，用户可能想留着对比。
-  /// 若新回答写同一路径会覆盖旧的 —— 那是用户自己选的路径冲突，
-  /// 交给审批弹窗处理。
+  /// ## 为什么必须把「展示」和「历史」拆开
   ///
-  /// ## 实现要点
+  /// 上一版这里是错的：先把 session 截断到提问位置再 send，
+  /// 旧回答被 sublist 丢掉并写回存储 —— 界面上就是「被替换了」，
+  /// 和 resend 毫无区别，注释写的「保留」根本没发生。
   ///
-  /// 不走「先删再加」，而是：
-  /// 1. 取最后一条 user 消息之前的历史作为 base
-  /// 2. 再调一次 runner
-  /// 3. 新回答追加在末尾（旧的仍在上面）
+  /// 正确做法是两条线：
+  /// - 展示线（session）：旧回答原样留着，新回答追加到末尾
+  /// - 历史线（historyEntries）：只到提问前为止，不含旧回答
   ///
-  /// 不能把旧回答也当历史喂进去 —— 模型会以为那是别人的答复，
-  /// 然后倾向于「延续」而不是重新回答，输出会和旧的几乎一样。
+  /// 历史线为什么要排除旧回答：把它当历史发过去，模型会认为
+  /// 「这个问题已经有人答过了」，于是倾向补充/改写而不是重新回答，
+  /// 结果和旧的高度雷同，等于白跑一次。
   Future<bool> regenerate({
     required Future<ApprovalDecision?> Function(ApprovalRequest req) onApproval,
   }) async {
@@ -677,11 +735,15 @@ class AiController extends ChangeNotifier {
     if (lastUserIdx < 0) return false;
 
     final question = s.entries[lastUserIdx].text;
-    final base = s.copyWith(entries: s.entries.sublist(0, lastUserIdx));
-    _session = base;
-    notifyListeners();
 
-    return send(question, onApproval: onApproval);
+    // 关键：不改 _session。旧回答留着，新回答由 send 追加。
+    final history = s.entries.sublist(0, lastUserIdx);
+
+    return send(
+      question,
+      onApproval: onApproval,
+      historyEntries: history,
+    );
   }
   /// 重发：撤回这条用户消息，原样再发一遍。
   Future<bool> resend(

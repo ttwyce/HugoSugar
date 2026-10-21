@@ -327,7 +327,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
   String? _error;
 
   /// 思考模式（配在端点上，因为各家协议不同）
-  late ThinkingMode _thinking;
+  late ThinkingProtocol _protocol;
   List<AiModel> _models = const [];
 
   bool get _isEdit => widget.existing != null;
@@ -340,7 +340,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
     _baseUrl = TextEditingController(text: e?.baseUrl ?? '');
     _model = TextEditingController(text: e?.model ?? '');
     _key = TextEditingController();
-    _thinking = e?.thinkingMode ?? ThinkingMode.none;
+    _protocol = e?.thinkingProtocol ?? ThinkingProtocol.off;
   }
 
   @override
@@ -481,27 +481,27 @@ class _EndpointEditorState extends State<_EndpointEditor> {
               // 各家协议完全不同（R1 不用请求、Qwen3 要 enable_thinking、
               // o 系列要 reasoning_effort 且不返回内容）。
               // 配在这里，用户换端点就自动跟着换协议。
-              DropdownButtonFormField<ThinkingMode>(
-                initialValue: _thinking,
+              DropdownButtonFormField<ThinkingProtocol>(
+                initialValue: _protocol,
                 decoration: const InputDecoration(
-                  labelText: '思考模式',
+                  labelText: '思考协议',
                   isDense: true,
                 ),
                 style: TextStyle(fontSize: 13, color: c.textPrimary),
                 items: [
-                  for (final m in ThinkingMode.values)
+                  for (final m in ThinkingProtocol.values)
                     DropdownMenuItem(
                       value: m,
                       child: Text(m.label, style: const TextStyle(fontSize: 13)),
                     ),
                 ],
                 onChanged: (v) =>
-                    setState(() => _thinking = v ?? ThinkingMode.none),
+                    setState(() => _protocol = v ?? ThinkingProtocol.off),
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 2),
                 child: Text(
-                  _thinkingHint,
+                  _protocolHint,
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
               ),
@@ -648,14 +648,18 @@ class _EndpointEditorState extends State<_EndpointEditor> {
 
   /// 当前思考模式的说明。写清楚「会不会真的思考」，
   /// 因为选错的表现是「开关开了但什么都没有」，很容易被当成 bug。
-  String get _thinkingHint => switch (_thinking) {
-        ThinkingMode.none => '不发思考相关参数，普通模型选这个',
-        ThinkingMode.parseOnly =>
-          '只显示不请求：R1 这类本身总在思考的模型',
-        ThinkingMode.enableThinking =>
-          '发 enable_thinking=true：Qwen3 等混合模型必须选这个才会思考',
-        ThinkingMode.reasoningEffort =>
-          '发 reasoning_effort：o1/o3 不返回思考内容，只影响推理强度',
+  /// 协议的说明。
+  ///
+  /// 关键要说清「这个协议能不能表达档位」——
+  /// 用户以为选了「深度」就更用力思考，但如果端点只支持
+  /// enable_thinking（布尔），那 low/high 的结果完全一样。
+  String get _protocolHint => switch (_protocol) {
+        ThinkingProtocol.off => '不发思考参数。普通对话模型选这个',
+        ThinkingProtocol.alwaysOn => '模型本身总是思考，只显示不请求（R1 官方端点）',
+        ThinkingProtocol.enableThinking =>
+          '开/关两档。注意：该协议没有档位，选轻量/深度效果相同',
+        ThinkingProtocol.reasoningEffort =>
+          '支持 low/medium/high 档位。o1/o3 不返回思考内容',
       };
 
   Future<void> _save() async {
@@ -682,7 +686,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         name: finalName,
         baseUrl: base,
         model: _model.text.trim(),
-        thinkingMode: _thinking,
+        thinkingProtocol: _protocol,
       );
       await widget.controller.updateEndpoint(
         updated,
@@ -694,7 +698,7 @@ class _EndpointEditorState extends State<_EndpointEditor> {
         baseUrl: base,
         model: _model.text.trim(),
         apiKey: _key.text.trim(),
-        thinkingMode: _thinking,
+        thinkingProtocol: _protocol,
       );
     }
 

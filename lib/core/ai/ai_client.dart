@@ -202,6 +202,7 @@ class AiClient {
     CancelToken? cancelToken,
     int maxRetries = 2,
     void Function(int attempt, int maxAttempts, Duration wait)? onRetry,
+    ThinkingLevel thinkingLevel = ThinkingLevel.none,
   }) async {
     var attempt = 0;
     while (true) {
@@ -216,6 +217,7 @@ class AiClient {
           onReasoningDelta: onReasoningDelta,
           timeout: timeout,
           cancelToken: cancelToken,
+          thinkingLevel: thinkingLevel,
         );
         return;
       } on AiException catch (e) {
@@ -245,7 +247,11 @@ class AiClient {
     void Function(String delta)? onReasoningDelta,
     Duration timeout = const Duration(seconds: 60),
     CancelToken? cancelToken,
+    ThinkingLevel thinkingLevel = ThinkingLevel.none,
   }) async {
+    // 短名字：下面拼 body 时用得多
+    final level = thinkingLevel;
+
     if (endpoint.baseUrl.trim().isEmpty) {
       throw AiException(AiErrorKind.notConfigured, '还没有配置 AI 端点');
     }
@@ -275,20 +281,24 @@ class AiClient {
     // 光靠解析 reasoning_content 是等不到内容的。
     //
     // 各家的参数名和取值完全不同，见 ThinkingMode 的注释。
-    switch (endpoint.thinkingMode) {
-      case ThinkingMode.none:
-        // 什么都不发。普通模型（V3 / 4o）收到未知字段可能直接 400
+    switch (endpoint.thinkingProtocol) {
+      case ThinkingProtocol.off:
+        // 什么都不发。普通模型收到未知字段可能直接 400。
         break;
-      case ThinkingMode.parseOnly:
-        // 模型本身总是思考（R1 官方端点），不需要请求参数。
-        // 主动发 enable_thinking 反而有些中转站会报「未知字段」。
+      case ThinkingProtocol.alwaysOn:
+        // 模型本身总是思考，不需要请求参数。
         break;
-      case ThinkingMode.enableThinking:
-        body['enable_thinking'] = true;
+      case ThinkingProtocol.enableThinking:
+        // 布尔开关：没有档位概念。
+        // 选了除 none 以外的任何档位都译成 true ——
+        // 这是该协议的表达能力上限，不是偷懒。
+        body['enable_thinking'] = level.isThinking;
         break;
-      case ThinkingMode.reasoningEffort:
-        // o 系列只认 low/medium/high，不接受布尔值
-        body['reasoning_effort'] = 'medium';
+      case ThinkingProtocol.reasoningEffort:
+        // 档位制。level=none 时也不发（发了等于强制思考）。
+        if (level.isThinking) {
+          body['reasoning_effort'] = level.effortValue;
+        }
         break;
     }
 
