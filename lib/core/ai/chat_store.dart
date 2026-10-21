@@ -34,24 +34,24 @@ class ToolCallRecord {
   final bool? approved;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'arguments': arguments,
-        'ok': ok,
-        'summary': summary,
-        'detail': detail,
-        if (approved != null) 'approved': approved,
-      };
+    'id': id,
+    'name': name,
+    'arguments': arguments,
+    'ok': ok,
+    'summary': summary,
+    'detail': detail,
+    if (approved != null) 'approved': approved,
+  };
 
   static ToolCallRecord fromJson(Map<String, dynamic> j) => ToolCallRecord(
-        id: j['id'] as String? ?? '',
-        name: j['name'] as String? ?? '',
-        arguments: j['arguments'] as String? ?? '',
-        ok: j['ok'] as bool? ?? false,
-        summary: j['summary'] as String? ?? '',
-        detail: j['detail'] as String? ?? '',
-        approved: j['approved'] as bool?,
-      );
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? '',
+    arguments: j['arguments'] as String? ?? '',
+    ok: j['ok'] as bool? ?? false,
+    summary: j['summary'] as String? ?? '',
+    detail: j['detail'] as String? ?? '',
+    approved: j['approved'] as bool?,
+  );
 }
 
 /// 一次写入操作的备份，支持回滚
@@ -70,16 +70,16 @@ class WriteBackup {
   final DateTime at;
 
   Map<String, dynamic> toJson() => {
-        'relPath': relPath,
-        'previous': previous,
-        'at': at.toIso8601String(),
-      };
+    'relPath': relPath,
+    'previous': previous,
+    'at': at.toIso8601String(),
+  };
 
   static WriteBackup fromJson(Map<String, dynamic> j) => WriteBackup(
-        relPath: j['relPath'] as String? ?? '',
-        previous: j['previous'] as String?,
-        at: DateTime.tryParse(j['at'] as String? ?? '') ?? DateTime.now(),
-      );
+    relPath: j['relPath'] as String? ?? '',
+    previous: j['previous'] as String?,
+    at: DateTime.tryParse(j['at'] as String? ?? '') ?? DateTime.now(),
+  );
 }
 
 /// 对话中的一条展示消息。
@@ -161,21 +161,19 @@ class ChatEntry {
   }
 
   Map<String, dynamic> toJson() => {
-        'role': role,
-        'text': text,
-        'at': at.toIso8601String(),
-        if (toolCalls.isNotEmpty)
-          'toolCalls': toolCalls.map((c) => c.toJson()).toList(),
-        if (isError) 'isError': true,
-        if (backups.isNotEmpty)
-          'backups': backups.map((b) => b.toJson()).toList(),
-        if (promptTokens != null) 'promptTokens': promptTokens,
-        if (completionTokens != null) 'completionTokens': completionTokens,
-        if (usageIsExact) 'usageIsExact': true,
-        if (reasoning.isNotEmpty) 'reasoning': reasoning,
-        if (toolTokensEstimated > 0)
-          'toolTokensEstimated': toolTokensEstimated,
-      };
+    'role': role,
+    'text': text,
+    'at': at.toIso8601String(),
+    if (toolCalls.isNotEmpty)
+      'toolCalls': toolCalls.map((c) => c.toJson()).toList(),
+    if (isError) 'isError': true,
+    if (backups.isNotEmpty) 'backups': backups.map((b) => b.toJson()).toList(),
+    if (promptTokens != null) 'promptTokens': promptTokens,
+    if (completionTokens != null) 'completionTokens': completionTokens,
+    if (usageIsExact) 'usageIsExact': true,
+    if (reasoning.isNotEmpty) 'reasoning': reasoning,
+    if (toolTokensEstimated > 0) 'toolTokensEstimated': toolTokensEstimated,
+  };
 
   static ChatEntry fromJson(Map<String, dynamic> j) {
     final raw = j['toolCalls'];
@@ -228,12 +226,35 @@ class ChatSession {
     this.model = '',
     this.categoryIds = const [],
     this.readNotes = false,
+    this.groupId = '',
+    this.archivedAt,
   });
 
   final String id;
   final String title;
   final DateTime updatedAt;
   final List<ChatEntry> entries;
+
+  /// 所属分组。空串 = 未分组。
+  ///
+  /// 为什么用字符串 id 而不是列表里存会话 id：
+  /// 会话随时会被新建/删除，分组持有 id 列表就要维护双向一致性，
+  /// 中间任一处崩了就会「组里有幽灵会话」或「会话不在任何组」。
+  /// 单向引用（会话记住自己在哪组）只需改一个文件。
+  final String groupId;
+
+  /// 归档时间。null = 未归档。
+  ///
+  /// 用时间而不是 bool：用户想知道「什么时候归档的」，
+  /// 而且排序时能按归档时间倒序，比一堆 bool 更有信息量。
+  final DateTime? archivedAt;
+
+  /// 是否已归档。
+  ///
+  /// 归档是唯一允许删除的前提（见 ChatStore.delete 的说明）：
+  /// 直接把会话删掉不可恢复，而归档是「先收起来」，
+  /// 过一段时间用户确认不要了再删。
+  bool get isArchived => archivedAt != null;
 
   /// 记录用哪个端点/模型产生的，方便回溯
   final String endpointId;
@@ -262,6 +283,9 @@ class ChatSession {
     String? model,
     List<String>? categoryIds,
     bool? readNotes,
+    String? groupId,
+    DateTime? archivedAt,
+    bool clearArchived = false,
   }) {
     return ChatSession(
       id: id,
@@ -272,39 +296,50 @@ class ChatSession {
       model: model ?? this.model,
       categoryIds: categoryIds ?? this.categoryIds,
       readNotes: readNotes ?? this.readNotes,
+      groupId: groupId ?? this.groupId,
+      // archivedAt 单独一个开关：
+      // 「取消归档」要能真的置回 null，而 copyWith 的 ?? 语法做不到，
+      // 所以这里多接一个 clearArchived 参数。
+      archivedAt: clearArchived ? null : (archivedAt ?? this.archivedAt),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'updatedAt': updatedAt.toIso8601String(),
-        'entries': entries.map((e) => e.toJson()).toList(),
-        'endpointId': endpointId,
-        'model': model,
-        'categoryIds': categoryIds,
-        'readNotes': readNotes,
-      };
+    'id': id,
+    'title': title,
+    'updatedAt': updatedAt.toIso8601String(),
+    'entries': entries.map((e) => e.toJson()).toList(),
+    'endpointId': endpointId,
+    'model': model,
+    'categoryIds': categoryIds,
+    'readNotes': readNotes,
+    'groupId': groupId,
+    if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
+  };
 
   static ChatSession fromJson(Map<String, dynamic> j) {
     final raw = j['entries'];
     final list = <ChatEntry>[];
     if (raw is List) {
       for (final e in raw) {
-        if (e is Map) list.add(ChatEntry.fromJson(Map<String, dynamic>.from(e)));
+        if (e is Map) {
+          list.add(ChatEntry.fromJson(Map<String, dynamic>.from(e)));
+        }
       }
     }
     final cats = j['categoryIds'];
     return ChatSession(
       id: j['id'] as String? ?? '',
       title: j['title'] as String? ?? '',
-      updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ??
-          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(j['updatedAt'] as String? ?? '') ?? DateTime.now(),
       entries: list,
       endpointId: j['endpointId'] as String? ?? '',
       model: j['model'] as String? ?? '',
       categoryIds: cats is List ? cats.whereType<String>().toList() : const [],
       readNotes: j['readNotes'] as bool? ?? false,
+      groupId: j['groupId'] as String? ?? '',
+      archivedAt: DateTime.tryParse(j['archivedAt'] as String? ?? ''),
     );
   }
 
@@ -321,10 +356,43 @@ class ChatSession {
         : usable;
     for (final e in slice) {
       if (e.text.trim().isEmpty) continue;
-      out.add(AiMessage(role: e.isUser ? 'user' : 'assistant', content: e.text));
+      out.add(
+        AiMessage(role: e.isUser ? 'user' : 'assistant', content: e.text),
+      );
     }
     return out;
   }
+}
+
+/// 会话分组。
+///
+/// 与「归档」是两条正交的轴，不能合并：
+/// - 分组 = 横向分类（写作辅助 / 排错 / 闲聊），一个会话在且只在一个组
+/// - 归档 = 纵向状态（活跃 / 收起来了），与分类无关
+///
+/// 合并成「归档是一个特殊分组」看着省事，但会立刻撞墙：
+/// 归档的会话想保住原来的分类就做不到了。
+class ChatGroup {
+  const ChatGroup({required this.id, required this.name, this.createdAt});
+
+  final String id;
+  final String name;
+  final DateTime? createdAt;
+
+  ChatGroup copyWith({String? name}) =>
+      ChatGroup(id: id, name: name ?? this.name, createdAt: createdAt);
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+  };
+
+  static ChatGroup fromJson(Map<String, dynamic> j) => ChatGroup(
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? '',
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
+  );
 }
 
 /// 对话的本地存储。
@@ -346,7 +414,10 @@ class ChatStore {
   Future<List<ChatSession>> listAll() async {
     try {
       if (!await _dir.exists()) return const [];
-      final files = await _dir.list().where((f) => f.path.endsWith('.json')).toList();
+      final files = await _dir
+          .list()
+          .where((f) => f.path.endsWith('.json'))
+          .toList();
       final sessions = <ChatSession>[];
       for (final f in files) {
         try {
@@ -389,5 +460,40 @@ class ChatStore {
     } catch (_) {
       // 忽略
     }
+  }
+
+  // ── 分组 ──────────────────────────────────────────────
+
+  File get _groupsFile => File('${_dir.path}/_groups.json');
+
+  /// 读全部分组。
+  ///
+  /// 存在会话目录下的 `_groups.json` 而不是单独一层目录：
+  /// listAll() 只收 `.json` 结尾且这里要显式排除这个文件，
+  /// 放一起的好处是「备份会话目录」时分组不会漏掉。
+  Future<List<ChatGroup>> listGroups() async {
+    try {
+      final f = _groupsFile;
+      if (!await f.exists()) return const [];
+      final j = jsonDecode(await f.readAsString());
+      if (j is! List) return const [];
+      final out = <ChatGroup>[];
+      for (final e in j) {
+        if (e is Map) {
+          out.add(ChatGroup.fromJson(Map<String, dynamic>.from(e)));
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveGroups(List<ChatGroup> groups) async {
+    await _dir.create(recursive: true);
+    await _groupsFile.writeAsString(
+      jsonEncode(groups.map((g) => g.toJson()).toList()),
+      flush: true,
+    );
   }
 }

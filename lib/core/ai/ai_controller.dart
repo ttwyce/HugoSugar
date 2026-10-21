@@ -199,6 +199,7 @@ class AiController extends ChangeNotifier {
     await memoryStore!.load();
     _config = await _endpointStore!.load();
     _sessions = await _chatStore!.listAll();
+    _groups = await _chatStore!.listGroups();
     notifyListeners();
   }
 
@@ -407,11 +408,133 @@ class AiController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteSession(String id) async {
+  // ── 会话分组与归档 ─────────────────────────────────────
+
+  List<ChatGroup> _groups = const [];
+  List<ChatGroup> get groups => _groups;
+
+  /// 已归档的会话，按归档时间倒序（最近归档的在最前）。
+  List<ChatSession> get archivedSessions {
+    final list = _sessions.where((s) => s.isArchived).toList();
+    list.sort((a, b) => b.archivedAt!.compareTo(a.archivedAt!));
+    return list;
+  }
+
+  /// 未归档的会话。
+  List<ChatSession> get activeSessions =>
+      _sessions.where((s) => !s.isArchived).toList();
+
+  /// 某个分组下的活跃会话。
+  List<ChatSession> sessionsInGroup(String groupId) => _sessions
+      .where((s) => !s.isArchived && s.groupId == groupId)
+      .toList();
+
+  /// 未归组的活跃会话。
+  List<ChatSession> get ungroupedSessions =>
+      _sessions.where((s) => !s.isArchived && s.groupId.isEmpty).toList();
+
+  Future<void> reloadGroups() async {
+    _groups = await _chatStore?.listGroups() ?? const [];
+    notifyListeners();
+  }
+
+  Future<ChatGroup> addGroup(String name) async {
+    final g = ChatGroup(
+      id: 'g_${DateTime.now().microsecondsSinceEpoch}',
+      name: name.trim().isEmpty ? '未命名分组' : name.trim(),
+      createdAt: DateTime.now(),
+    );
+    _groups = [..._groups, g];
+    await _chatStore?.saveGroups(_groups);
+    notifyListeners();
+    return g;
+  }
+
+  Future<void> renameGroup(String id, String name) async {
+    _groups = _groups
+        .map((g) => g.id == id
+            ? g.copyWith(name: name.trim().isEmpty ? g.name : name.trim())
+            : g)
+        .toList();
+    await _chatStore?.saveGroups(_groups);
+    notifyListeners();
+  }
+
+  /// 删除分组。
+  ///
+  /// **不删会话**，只把它们退回「未分组」。
+  /// 删个分组顺手把里面的对话全清掉，是那种「点错了才发现」的灾难，
+  /// 而且分组只是标签，标签没了内容还在是符合直觉的。
+  Future<void> deleteGroup(String id) async {
+    _groups = _groups.where((g) => g.id != id).toList();
+    await _chatStore?.saveGroups(_groups);
+
+    final affected = _sessions.where((s) => s.groupId == id).toList();
+    for (final s in affected) {
+      final updated = s.copyWith(groupId: '');
+      await _chatStore?.save(updated);
+      if (_session?.id == updated.id) _session = updated;
+    }
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+  }
+
+  Future<void> moveToGroup(String sessionId, String groupId) async {
+    final target = _sessions.firstWhere(
+      (s) => s.id == sessionId,
+      orElse: () => _session?.id == sessionId
+          ? _session!
+          : ChatSession(
+              id: sessionId, title: '', updatedAt: DateTime.now()),
+    );
+    final updated = target.copyWith(groupId: groupId);
+    await _chatStore?.save(updated);
+    if (_session?.id == sessionId) _session = updated;
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+  }
+
+  /// 归档一个会话。
+  Future<void> archiveSession(String id) async {
+    final s = await _chatStore?.load(id);
+    if (s == null) return;
+    final updated = s.copyWith(archivedAt: DateTime.now());
+    await _chatStore?.save(updated);
+    if (_session?.id == id) _session = updated;
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+  }
+
+  /// 取消归档。
+  Future<void> unarchiveSession(String id) async {
+    final s = await _chatStore?.load(id);
+    if (s == null) return;
+    final updated = s.copyWith(clearArchived: true);
+    await _chatStore?.save(updated);
+    if (_session?.id == id) _session = updated;
+    _sessions = await _chatStore?.listAll() ?? const [];
+    notifyListeners();
+  }
+
+  /// 删除会话。
+  ///
+  /// **必须先归档**。理由不是洁癖：
+  /// 删除是不可恢复的，而「删除按钮」在长按/误触时很容易点到。
+  /// 归档多一步，等于给用户一次「过几天再看还在不在」的机会。
+  ///
+  /// 返回 false 表示拒绝删除（未归档），调用方据此提示用户。
+  Future<bool> deleteSession(String id) async {
+    final exists = _sessions.where((s) => s.id == id);
+    final archived = exists.isNotEmpty
+        ? exists.first.isArchived
+        : (await _chatStore?.load(id))?.isArchived ?? false;
+    if (!archived) return false;
+
     await _chatStore?.delete(id);
     if (_session?.id == id) _session = null;
     _sessions = await _chatStore?.listAll() ?? const [];
     notifyListeners();
+    return true;
   }
 
   /// 发送一条消息并跑完整 Agent 循环。

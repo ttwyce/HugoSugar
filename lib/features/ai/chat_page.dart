@@ -1963,6 +1963,13 @@ class _HistorySheet extends StatefulWidget {
 }
 
 class _HistorySheetState extends State<_HistorySheet> {
+  /// 当前标签页：0 = 活跃，1 = 已归档
+  ///
+  /// 用「归档」单独一个页签而不是同一列表里的折叠区：
+  /// 归档的目的是「眼不见心不烦」，混在活跃列表里每次都要划过去，
+  /// 等于没归档。
+  int _tab = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1982,27 +1989,16 @@ class _HistorySheetState extends State<_HistorySheet> {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final sessions = widget.controller.sessions;
+    final ctrl = widget.controller;
+    final activeCount = ctrl.activeSessions.length;
+    final archivedCount = ctrl.archivedSessions.length;
 
-    // 三处结构性修正（都是真机上会出问题的地方）：
-    //
-    // 1. Column 的横向约束。弹窗 builder 拿到的是无界宽度，
-    //    ListTile / IconButton 在这种环境下再叠一层无界就可能
-    //    触发布局断言 —— 和端点弹窗是同一类问题。
-    //    用 SizedBox 钉死宽度。
-    //
-    // 2. 高度。原来只有内层 ListView 限了 360，外层 Column
-    //    是 mainAxisSize.min，会话一多整体会超出屏幕且**不能滚动**，
-    //    底部条目永远点不到。改成外层可滚动 + 高度上限。
-    //
-    // 3. 空态。用 Center + 固定高度，避免极小高度下只剩一条缝。
     return SafeArea(
       child: SizedBox(
         width: MediaQuery.sizeOf(context).width,
         child: ConstrainedBox(
-          // 最多占屏幕高度的 70%，保证底部按钮和内容都够用
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.75,
           ),
           child: Padding(
             padding: const EdgeInsets.all(AppSpace.md),
@@ -2022,77 +2018,554 @@ class _HistorySheetState extends State<_HistorySheet> {
                         ),
                       ),
                     ),
-                    if (sessions.isNotEmpty)
-                      Text(
-                        '${sessions.length} 个',
-                        style: TextStyle(fontSize: 11, color: c.textTertiary),
+                    IconButton(
+                      tooltip: '管理分组',
+                      icon: Icon(
+                        Icons.create_new_folder_outlined,
+                        size: 18,
+                        color: c.textTertiary,
                       ),
+                      onPressed: () => _openGroupManager(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpace.xs),
+                // 两个页签：活跃 / 已归档
+                Row(
+                  children: [
+                    _tabButton('活跃 $activeCount', 0, c),
+                    const SizedBox(width: 8),
+                    _tabButton('已归档 $archivedCount', 1, c),
                   ],
                 ),
                 const SizedBox(height: AppSpace.sm),
-                if (sessions.isEmpty)
+                if (_tab == 0)
+                  Flexible(child: _buildActiveList(c))
+                else
+                  Flexible(child: _buildArchivedList(c)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton(String label, int index, AppColors c) {
+    final selected = _tab == index;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => setState(() => _tab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? c.accent.withValues(alpha: 0.12) : c.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? c.accent : c.divider,
+            width: selected ? 1 : 0.5,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected ? c.accent : c.textTertiary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 活跃列表：按分组分段
+  Widget _buildActiveList(AppColors c) {
+    final ctrl = widget.controller;
+    final groups = ctrl.groups;
+    final ungrouped = ctrl.ungroupedSessions;
+
+    if (ctrl.activeSessions.isEmpty) {
+      return _emptyHint('还没有历史对话', c);
+    }
+
+    // 先算好所有段落，再一次性展开成 sliver 列表。
+    // 直接用 Column 会在会话多时把高度顶爆（和当初端点弹窗同一个坑），
+    // 所以整体走 ListView。
+    final rows = <Widget>[];
+    for (final g in groups) {
+      final list = ctrl.sessionsInGroup(g.id);
+      if (list.isEmpty) continue;
+      rows.add(_sectionHeader(g.name, list.length, c, groupId: g.id));
+      for (final s in list) {
+        rows.add(_sessionTile(s, c, archived: false));
+      }
+    }
+    if (ungrouped.isNotEmpty) {
+      rows.add(_sectionHeader('未分组', ungrouped.length, c));
+      for (final s in ungrouped) {
+        rows.add(_sessionTile(s, c, archived: false));
+      }
+    }
+
+    return ListView(shrinkWrap: true, children: rows);
+  }
+
+  Widget _buildArchivedList(AppColors c) {
+    final list = widget.controller.archivedSessions;
+    if (list.isEmpty) {
+      return _emptyHint('没有已归档的对话', c);
+    }
+    return ListView(
+      shrinkWrap: true,
+      children: [for (final s in list) _sessionTile(s, c, archived: true)],
+    );
+  }
+
+  Widget _emptyHint(String text, AppColors c) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
+      child: SizedBox(
+        width: double.infinity,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: c.textTertiary, height: 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(
+    String name,
+    int count,
+    AppColors c, {
+    String? groupId,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: c.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text('$count', style: TextStyle(fontSize: 10, color: c.textTertiary)),
+          const Spacer(),
+          if (groupId != null)
+            InkWell(
+              onTap: () => _openGroupActions(groupId),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(Icons.more_horiz, size: 14, color: c.textTertiary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sessionTile(ChatSession s, AppColors c, {required bool archived}) {
+    final active = s.id == widget.controller.session?.id;
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        active ? Icons.chat_bubble : Icons.chat_bubble_outline,
+        size: 16,
+        color: active ? c.accent : c.textTertiary,
+      ),
+      title: Text(
+        s.title.isEmpty ? '未命名' : s.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 13,
+          color: active ? c.accent : c.textPrimary,
+        ),
+      ),
+      subtitle: Text(
+        '${s.entries.length} 条 · ${_fmtTime(s.updatedAt)}',
+        style: TextStyle(fontSize: 11, color: c.textTertiary),
+      ),
+      // 长按移动分组：只加长按不加按钮，
+      // 因为每行已经有两个按钮（归档/删除），再加一个太挤。
+      // 长按也是系统里「更多操作」的惯例位置。
+      onLongPress: archived ? null : () => _moveToGroup(s),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!archived)
+            IconButton(
+              tooltip: '归档',
+              icon: Icon(
+                Icons.archive_outlined,
+                size: 16,
+                color: c.textTertiary,
+              ),
+              onPressed: () async {
+                await widget.controller.archiveSession(s.id);
+                if (context.mounted) setState(() {});
+              },
+            )
+          else ...[
+            IconButton(
+              tooltip: '恢复',
+              icon: Icon(
+                Icons.unarchive_outlined,
+                size: 16,
+                color: c.textTertiary,
+              ),
+              onPressed: () async {
+                await widget.controller.unarchiveSession(s.id);
+                if (context.mounted) setState(() {});
+              },
+            ),
+            IconButton(
+              tooltip: '彻底删除',
+              icon: Icon(Icons.delete_outline, size: 16, color: c.danger),
+              onPressed: () => _confirmDelete(s),
+            ),
+          ],
+        ],
+      ),
+      onTap: () async {
+        // 先取到 Navigator，再 await：
+        // await 之后 context 可能已失效，那时再读 context 就是跨异步间隙。
+        final nav = Navigator.of(context);
+        await widget.controller.openSession(s.id);
+        nav.pop();
+      },
+    );
+  }
+
+  /// 长按会话：选一个分组移过去（含「未分组」）。
+  Future<void> _moveToGroup(ChatSession s) async {
+    final c = context.appColors;
+    final groups = widget.controller.groups;
+    final picked = await showModalBottomSheet<String?>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '移动到分组',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            // 空串代表「移回未分组」，与 null（取消）区分开
+            ListTile(
+              dense: true,
+              leading: Icon(
+                Icons.inbox_outlined,
+                size: 18,
+                color: c.textTertiary,
+              ),
+              title: const Text('未分组', style: TextStyle(fontSize: 13)),
+              trailing: s.groupId.isEmpty
+                  ? Icon(Icons.check, size: 16, color: c.accent)
+                  : null,
+              onTap: () => Navigator.of(bctx).pop(''),
+            ),
+            if (groups.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  '还没有分组，点右上角文件夹图标新建',
+                  style: TextStyle(fontSize: 12, color: c.textTertiary),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: groups.length,
+                  itemBuilder: (_, i) {
+                    final g = groups[i];
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        Icons.folder_outlined,
+                        size: 18,
+                        color: c.textTertiary,
+                      ),
+                      title: Text(
+                        g.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      trailing: s.groupId == g.id
+                          ? Icon(Icons.check, size: 16, color: c.accent)
+                          : null,
+                      onTap: () => Navigator.of(bctx).pop(g.id),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await widget.controller.moveToGroup(s.id, picked);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _confirmDelete(ChatSession s) async {
+    final c = context.appColors;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('彻底删除这个对话？'),
+        content: Text(
+          '「${s.title.isEmpty ? '未命名' : s.title}」将被永久删除，无法恢复。',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(true),
+            child: Text('删除', style: TextStyle(color: c.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.controller.deleteSession(s.id);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openGroupManager(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _GroupSheet(controller: widget.controller),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openGroupActions(String groupId) async {
+    final c = context.appColors;
+    final group = widget.controller.groups.firstWhere(
+      (g) => g.id == groupId,
+      orElse: () => ChatGroup(id: groupId, name: ''),
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (bctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined, size: 18),
+              title: const Text('重命名分组', style: TextStyle(fontSize: 13)),
+              onTap: () {
+                Navigator.of(bctx).pop();
+                _renameGroup(group);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, size: 18, color: c.danger),
+              title: Text(
+                '删除分组',
+                style: TextStyle(fontSize: 13, color: c.danger),
+              ),
+              subtitle: const Text(
+                '不删除对话，只把它们移回未分组',
+                style: TextStyle(fontSize: 11),
+              ),
+              onTap: () {
+                Navigator.of(bctx).pop();
+                widget.controller.deleteGroup(groupId);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _renameGroup(ChatGroup g) async {
+    final ctrl = TextEditingController(text: g.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('重命名分组'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(isDense: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(ctrl.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (name != null) {
+      await widget.controller.renameGroup(g.id, name);
+      if (mounted) setState(() {});
+    }
+  }
+
+  String _fmtTime(DateTime t) {
+    final now = DateTime.now();
+    final diff = now.difference(t);
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
+    if (diff.inDays < 1) return '${diff.inHours} 小时前';
+    if (diff.inDays < 30) return '${diff.inDays} 天前';
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-'
+        '${t.day.toString().padLeft(2, '0')}';
+  }
+}
+
+/// 分组管理：新建 / 重命名 / 删除
+class _GroupSheet extends StatefulWidget {
+  const _GroupSheet({required this.controller});
+  final AiController controller;
+  @override
+  State<_GroupSheet> createState() => _GroupSheetState();
+}
+
+class _GroupSheetState extends State<_GroupSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final groups = widget.controller.groups;
+    return SafeArea(
+      child: SizedBox(
+        width: MediaQuery.sizeOf(context).width,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '对话分组',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('新建', style: TextStyle(fontSize: 12)),
+                      onPressed: () => _create(context),
+                    ),
+                  ],
+                ),
+                if (groups.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
                     child: SizedBox(
                       width: double.infinity,
                       child: Text(
-                        '还没有历史对话',
+                        '还没有分组',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: c.textTertiary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textTertiary,
+                          height: 1.5,
+                        ),
                       ),
                     ),
                   )
                 else
-                  // Flexible 而不是固定高度：会话少时按内容撑开，
-                  // 多时才滚动，不会出现大片空白。
                   Flexible(
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: sessions.length,
+                      itemCount: groups.length,
                       itemBuilder: (_, i) {
-                        final s = sessions[i];
-                        final active = s.id == widget.controller.session?.id;
+                        final g = groups[i];
+                        final count = widget.controller
+                            .sessionsInGroup(g.id)
+                            .length;
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(
-                            active
-                                ? Icons.chat_bubble
-                                : Icons.chat_bubble_outline,
+                            Icons.folder_outlined,
                             size: 16,
-                            color: active ? c.accent : c.textTertiary,
+                            color: c.textTertiary,
                           ),
                           title: Text(
-                            s.title.isEmpty ? '未命名' : s.title,
+                            g.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: active ? c.accent : c.textPrimary,
-                            ),
+                            style: const TextStyle(fontSize: 13),
                           ),
                           subtitle: Text(
-                            '${s.entries.length} 条 · ${_fmtTime(s.updatedAt)}',
+                            '$count 个对话',
                             style: TextStyle(
                               fontSize: 11,
                               color: c.textTertiary,
                             ),
                           ),
-                          trailing: IconButton(
-                            icon: Icon(
-                              Icons.delete_outline,
-                              size: 16,
-                              color: c.textTertiary,
-                            ),
-                            onPressed: () async {
-                              await widget.controller.deleteSession(s.id);
-                              if (context.mounted) setState(() {});
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  Icons.edit_outlined,
+                                  size: 16,
+                                  color: c.textTertiary,
+                                ),
+                                onPressed: () => _rename(context, g),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  size: 16,
+                                  color: c.danger,
+                                ),
+                                onPressed: () async {
+                                  await widget.controller.deleteGroup(g.id);
+                                  if (mounted) setState(() {});
+                                },
+                              ),
+                            ],
                           ),
-                          onTap: () async {
-                            await widget.controller.openSession(s.id);
-                            if (context.mounted) Navigator.of(context).pop();
-                          },
                         );
                       },
                     ),
@@ -2105,14 +2578,61 @@ class _HistorySheetState extends State<_HistorySheet> {
     );
   }
 
-  String _fmtTime(DateTime t) {
-    final now = DateTime.now();
-    final diff = now.difference(t);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 30) return '${diff.inDays} 天前';
-    return '${t.year}-${t.month.toString().padLeft(2, '0')}-'
-        '${t.day.toString().padLeft(2, '0')}';
+  Future<void> _create(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('新建分组'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '例如：写作辅助', isDense: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(ctrl.text),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+    if (name != null && name.trim().isNotEmpty) {
+      await widget.controller.addGroup(name);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _rename(BuildContext context, ChatGroup g) async {
+    final ctrl = TextEditingController(text: g.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('重命名分组'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(isDense: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(ctrl.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (name != null) {
+      await widget.controller.renameGroup(g.id, name);
+      if (mounted) setState(() {});
+    }
   }
 }
