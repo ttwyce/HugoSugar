@@ -45,6 +45,13 @@ class NoteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 外部直接改动了 [NoteStore] 后通知界面刷新。
+  ///
+  /// 目前只有「从 WebDAV 备份恢复」会走这里：恢复是批量合并，
+  /// 走 [_store.mergeBackup] 比逐条调 [saveNote] 快得多，
+  /// 但那样就绕过了本类的每个写方法，需要显式补一次通知。
+  void notifyExternalChange() => notifyListeners();
+
   // ── 视图状态 ───────────────────────────────────────
 
   void setView(NoteView v) {

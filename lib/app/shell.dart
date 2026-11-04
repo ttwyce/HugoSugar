@@ -82,6 +82,7 @@ class _AppShellState extends State<AppShell> {
             siteController: widget.siteController,
             settingsController: widget.settingsController,
             aiController: widget.aiController,
+            noteController: widget.noteController,
             onAccentChanged: widget.onAccentChanged,
           ),
         ],

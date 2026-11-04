@@ -250,6 +250,73 @@ class NoteStore {
     return count;
   }
 
+  /// 把云端备份合并进本地库。
+  ///
+  /// ## 合并规则
+  ///
+  /// - 本地没有的 id → 直接加入（[NoteMergeStats.added]）
+  /// - 两边都有 → 保留 `updatedAt` 较新的那条（[NoteMergeStats.updated]）
+  /// - 本地更新 → 原样保留（[NoteMergeStats.kept]）
+  ///
+  /// 用「逐条取新」而不是整体覆盖，是因为恢复的典型场景是**换机**：
+  /// 新设备上可能已经写了几条，整体覆盖会把它们抹掉。
+  ///
+  /// 删除态也按时间比较：本地删了、备份里还没删且更新 → 会「复活」。
+  /// 这条规则是刻意选的 —— 删除本身也是一次 update，
+  /// 若备份时间点更晚，说明删除发生在备份之后，应当保留删除。
+  /// 反过来备份更旧时，本地删除必带更晚的 updatedAt，不会被复活。
+  Future<NoteMergeStats> mergeBackup({
+    required List<Note> notes,
+    required List<NoteCategory> categories,
+  }) async {
+    final merged = <Note>[..._notes];
+    // 先建 id → 下标索引，避免在循环里 indexWhere 造成 O(n²)
+    final indexById = <String, int>{};
+    for (var i = 0; i < merged.length; i++) {
+      indexById[merged[i].id] = i;
+    }
+
+    var added = 0;
+    var updated = 0;
+    var kept = 0;
+
+    for (final incoming in notes) {
+      if (incoming.id.isEmpty) continue;
+      final index = indexById[incoming.id];
+      if (index == null) {
+        indexById[incoming.id] = merged.length;
+        merged.add(incoming);
+        added++;
+      } else if (incoming.updatedAt.isAfter(merged[index].updatedAt)) {
+        merged[index] = incoming;
+        updated++;
+      } else {
+        kept++;
+      }
+    }
+
+    final mergedCategories = <NoteCategory>[..._categories];
+    final knownCategoryIds = _categories.map((c) => c.id).toSet();
+    var categoriesAdded = 0;
+    // 遍历的是入参 categories，不是 mergedCategories —— 边遍历边 add 会抛并发修改异常
+    for (final category in categories) {
+      if (category.id.isEmpty || !knownCategoryIds.add(category.id)) continue;
+      mergedCategories.add(category);
+      categoriesAdded++;
+    }
+
+    _notes = merged;
+    _categories = mergedCategories;
+    await _persist();
+
+    return NoteMergeStats(
+      added: added,
+      updated: updated,
+      kept: kept,
+      categoriesAdded: categoriesAdded,
+    );
+  }
+
   /// 切换置顶
   Future<Note?> togglePin(String id) async {
     final note = byId(id);
@@ -302,4 +369,29 @@ class NoteStore {
     final suffix = _notes.length % 1000;
     return 'note_${ts}_$suffix';
   }
+}
+
+/// [NoteStore.mergeBackup] 的结果统计。
+class NoteMergeStats {
+  const NoteMergeStats({
+    required this.added,
+    required this.updated,
+    required this.kept,
+    required this.categoriesAdded,
+  });
+
+  /// 备份里有、本地没有的条数
+  final int added;
+
+  /// 两边都有、备份版本更新的条数
+  final int updated;
+
+  /// 两边都有、本地版本更新（保留本地）的条数
+  final int kept;
+
+  /// 新增的分类数
+  final int categoriesAdded;
+
+  /// 内容真正发生变化的条数
+  int get changed => added + updated;
 }

@@ -60,6 +60,9 @@ dependencies:
   share_plus: ^10.0.2
   # 打包多篇文章用。纯 Dart，不引入原生代码。
   archive: ^3.6.1
+  # 想法备份加密：PBKDF2-HMAC-SHA256 + AES-256-GCM。
+  # 纯 Dart 实现，没有 flutter.plugin 段，不引入 NDK/CMake 构建链。
+  pointycastle: ^3.9.1
   # 仅供测试：给 path_provider 塞假实现，否则单测里真实 IO 会挂起。
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8

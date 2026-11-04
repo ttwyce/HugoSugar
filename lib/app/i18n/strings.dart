@@ -1003,6 +1003,133 @@ const Map<String, L10nEntry> kStrings = {
 
   // ── 编辑器预览 ──
   '正文还是空的': (zh: '正文还是空的', en: 'The body is empty'),
+
+  // ── 想法备份（WebDAV + 客户端加密）──
+  '备份': (zh: '备份', en: 'Backup'),
+  '想法备份': (zh: '想法备份', en: 'Notes backup'),
+  'WebDAV 存储，压缩后加密上传': (
+    zh: 'WebDAV 存储，压缩后加密上传',
+    en: 'WebDAV storage, compressed and encrypted before upload',
+  ),
+  'WebDAV 服务器': (zh: 'WebDAV 服务器', en: 'WebDAV server'),
+  '服务器地址': (zh: '服务器地址', en: 'Server URL'),
+  '填 WebDAV 根地址，不是网页登录地址': (
+    zh: '填 WebDAV 根地址，不是网页登录地址',
+    en: 'Use the WebDAV root URL, not the web login page',
+  ),
+  '账号': (zh: '账号', en: 'Username'),
+  '多数网盘用邮箱': (zh: '多数网盘用邮箱', en: 'Most providers use your email'),
+  '密码': (zh: '密码', en: 'Password'),
+  '这是 WebDAV 账号密码，不是下方用于加密的备份口令': (
+    zh: '这是 WebDAV 账号密码，不是下方用于加密的备份口令',
+    en: 'This is your WebDAV password, not the passphrase used for encryption below',
+  ),
+  '远端目录': (zh: '远端目录', en: 'Remote folder'),
+  '不存在会自动创建': (
+    zh: '不存在会自动创建',
+    en: 'Created automatically if missing',
+  ),
+  '允许自签证书': (
+    zh: '允许自签证书',
+    en: 'Allow self-signed certificates',
+  ),
+  '群晖、自建服务器常用自签证书。打开后才连得上，但无法验证服务器身份': (
+    zh: '群晖、自建服务器常用自签证书。打开后才连得上，但无法验证服务器身份',
+    en: 'Synology and self-hosted servers often use self-signed certificates. '
+        'Enable this to connect, but the server identity cannot be verified.',
+  ),
+  '允许明文连接（http）': (
+    zh: '允许明文连接（http）',
+    en: 'Allow plaintext HTTP',
+  ),
+  '警告：密码和备份文件会在链路上裸奔。除非走内网，否则不要打开': (
+    zh: '警告：密码和备份文件会在链路上裸奔。除非走内网，否则不要打开',
+    en: 'Warning: your password and backup file travel in the clear. '
+        'Only enable this on a trusted local network.',
+  ),
+  '测试连接': (zh: '测试连接', en: 'Test connection'),
+  '连接成功': (zh: '连接成功', en: 'Connected'),
+  '加密口令': (zh: '加密口令', en: 'Encryption passphrase'),
+  '备份口令': (zh: '备份口令', en: 'Backup passphrase'),
+  '至少 10 位': (zh: '至少 10 位', en: 'At least 10 characters'),
+  '想法在手机上压缩并加密后才上传，服务器只能看到密文': (
+    zh: '想法在手机上压缩并加密后才上传，服务器只能看到密文',
+    en: 'Notes are compressed and encrypted on this device before upload. '
+        'The server only ever sees ciphertext.',
+  ),
+  '再输一次': (zh: '再输一次', en: 'Repeat passphrase'),
+  '口令不会被上传。忘记后云端备份无法恢复，请自己另存一份': (
+    zh: '口令不会被上传。忘记后云端备份无法恢复，请自己另存一份',
+    en: 'The passphrase is never uploaded. If you forget it the backup cannot '
+        'be recovered — keep a copy somewhere safe.',
+  ),
+  '记住口令': (zh: '记住口令', en: 'Remember passphrase'),
+  '以 0600 权限存在应用私有目录，用于每日自动备份。不勾选则每次都要手输': (
+    zh: '以 0600 权限存在应用私有目录，用于每日自动备份。不勾选则每次都要手输',
+    en: 'Stored with mode 0600 in the app private directory, needed for daily '
+        'auto-backup. Leave it off to type the passphrase every time.',
+  ),
+  '自动备份': (zh: '自动备份', en: 'Auto backup'),
+  '每天自动备份': (zh: '每天自动备份', en: 'Back up daily'),
+  '打开 App 时检查，距上次超过 23 小时就备份一次': (
+    zh: '打开 App 时检查，距上次超过 23 小时就备份一次',
+    en: 'Checked when the app opens; backs up if more than 23 hours have passed',
+  ),
+  '需要先打开「记住口令」，否则自动备份时没有口令可用': (
+    zh: '需要先打开「记住口令」，否则自动备份时没有口令可用',
+    en: 'Requires "Remember passphrase", otherwise auto-backup has no passphrase '
+        'to use',
+  ),
+  '上次备份': (zh: '上次备份', en: 'Last backup'),
+  '从未备份': (zh: '从未备份', en: 'Never backed up'),
+  '操作': (zh: '操作', en: 'Actions'),
+  '立即备份': (zh: '立即备份', en: 'Back up now'),
+  '从备份恢复': (zh: '从备份恢复', en: 'Restore from backup'),
+  '合并': (zh: '合并', en: 'Merge'),
+  '备份成功：{} 条想法，{}': (
+    zh: '备份成功：{} 条想法，{}',
+    en: 'Backup complete: {} notes, {}',
+  ),
+  '请先设置备份口令': (zh: '请先设置备份口令', en: 'Set a backup passphrase first'),
+  '请先输入备份口令': (
+    zh: '请先输入备份口令',
+    en: 'Enter the backup passphrase first',
+  ),
+  '读取备份失败': (zh: '读取备份失败', en: 'Could not read the backup'),
+  '备份时间：{}\n活跃想法 {} 条，回收站 {} 条，分类 {} 个\n\n将与本地合并：同一条取较新的版本，本地独有的想法会保留。': (
+    zh: '备份时间：{}\n活跃想法 {} 条，回收站 {} 条，分类 {} 个\n\n'
+        '将与本地合并：同一条取较新的版本，本地独有的想法会保留。',
+    en: 'Backup from: {}\n{} active notes, {} in trash, {} categories\n\n'
+        'This will merge with your local notes: the newer copy wins for each '
+        'note, and notes only on this device are kept.',
+  ),
+  '恢复失败': (zh: '恢复失败', en: 'Restore failed'),
+  '恢复完成': (zh: '恢复完成', en: 'Restore complete'),
+  '恢复完成：新增 {} 条，更新 {} 条，保留本地较新 {} 条': (
+    zh: '恢复完成：新增 {} 条，更新 {} 条，保留本地较新 {} 条',
+    en: 'Restore complete: {} added, {} updated, {} kept local',
+  ),
+  '服务器地址要填完整，以 https:// 开头': (
+    zh: '服务器地址要填完整，以 https:// 开头',
+    en: 'Enter the full server URL starting with https://',
+  ),
+  '备份口令至少 10 位': (
+    zh: '备份口令至少 10 位',
+    en: 'Passphrase must be at least 10 characters',
+  ),
+  '两次输入的口令不一致': (
+    zh: '两次输入的口令不一致',
+    en: 'The two passphrases do not match',
+  ),
+  '备份失败': (zh: '备份失败', en: 'Backup failed'),
+  '备份内容是先在手机上 gzip 压缩、再用你的口令做 AES-256-GCM 加密的结果。WebDAV 服务器和中间链路都只能看到密文，文件名固定、不暴露条数。': (
+    zh: '备份内容是先在手机上 gzip 压缩、再用你的口令做 AES-256-GCM 加密的结果。'
+        'WebDAV 服务器和中间链路都只能看到密文，文件名固定、不暴露条数。',
+    en: 'The backup is gzipped on this device and then encrypted with '
+        'AES-256-GCM using your passphrase. The WebDAV server and anything in '
+        'between only see ciphertext; the file name is fixed so it does not '
+        'reveal how many notes you have.',
+  ),
 };
 
 /// 取文案。

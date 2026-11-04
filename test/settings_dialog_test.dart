@@ -61,6 +61,7 @@ Future<Widget> _build(WidgetTester tester) async {
         siteController: site,
         settingsController: settings,
         aiController: ai,
+        noteController: notes,
       ),
     );
   });

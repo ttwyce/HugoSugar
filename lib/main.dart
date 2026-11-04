@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:git2dart/git2dart.dart';
 
@@ -7,6 +9,7 @@ import 'app/theme/app_theme.dart';
 import 'app/theme/reading_prefs.dart';
 import 'app/shell.dart';
 import 'core/ai/ai_controller.dart';
+import 'core/backup/backup_scheduler.dart';
 import 'core/note/note_controller.dart';
 import 'core/note/note_store.dart';
 import 'core/settings/app_settings.dart';
@@ -77,6 +80,11 @@ class _HugoSugarAppState extends State<HugoSugarApp> {
   Future<void> _initNotes() async {
     final store = await NoteStore.open();
     if (!mounted) return;
+
+    // 每日自动备份：只在「已记住口令 + 距上次超过 23 小时」时才真正发请求。
+    // 不 await —— 备份要走网络，绝不能拖慢首帧；内部已吞掉所有异常。
+    unawaited(BackupScheduler.runIfDue(store));
+
     final notes = NoteController(store: store, site: _siteController);
 
     // AI 必须在笔记之后建：它要用 NoteController 读想法。

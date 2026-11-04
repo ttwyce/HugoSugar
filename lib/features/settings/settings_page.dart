@@ -7,6 +7,7 @@ import '../../app/theme/app_colors.dart';
 import '../../app/theme/reading_prefs.dart';
 import '../../core/ai/ai_controller.dart';
 import '../../core/ai/default_prompt.dart';
+import '../../core/note/note_controller.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/site/site_controller.dart';
@@ -14,6 +15,7 @@ import '../../shared/widgets.dart';
 import '../ai/ai_endpoints_page.dart';
 import 'author_identity_dialog.dart';
 import 'author_suggestion.dart';
+import 'backup_page.dart';
 import 'memory_page.dart';
 import 'token_dialog.dart';
 import 'tool_skill_page.dart';
@@ -27,6 +29,7 @@ class SettingsPage extends StatefulWidget {
     required this.siteController,
     required this.settingsController,
     required this.aiController,
+    required this.noteController,
     this.onAccentChanged,
   });
 
@@ -41,6 +44,9 @@ class SettingsPage extends StatefulWidget {
   final SiteController siteController;
   final SettingsController settingsController;
   final AiController aiController;
+
+  /// 想法备份需要直接读写 NoteStore
+  final NoteController noteController;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -165,6 +171,15 @@ class _SettingsPageState extends State<SettingsPage> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MemoryPage(controller: widget.aiController),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openBackup() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BackupPage(noteController: widget.noteController),
       ),
     );
     if (mounted) setState(() {});
@@ -654,6 +669,18 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: _editAuthor,
+          ),
+
+          SectionHeader(context.tr(T('备份'))),
+          ListTile(
+            leading: const Icon(Icons.backup_outlined),
+            title: Text(context.tr(T('想法备份'))),
+            subtitle: Text(
+              T('WebDAV 存储，压缩后加密上传'),
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _openBackup,
           ),
 
           const SectionHeader('AI'),
