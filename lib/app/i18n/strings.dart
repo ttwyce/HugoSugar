@@ -1004,6 +1004,12 @@ const Map<String, L10nEntry> kStrings = {
   // ── 编辑器预览 ──
   '正文还是空的': (zh: '正文还是空的', en: 'The body is empty'),
 
+  // ── 返回与退出 ──
+  '再按一次返回键退出': (
+    zh: '再按一次返回键退出',
+    en: 'Press back again to exit',
+  ),
+
   // ── 想法备份（WebDAV + 客户端加密）──
   '备份': (zh: '备份', en: 'Backup'),
   '想法备份': (zh: '想法备份', en: 'Notes backup'),

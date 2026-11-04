@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hugosugar/app/theme/app_colors.dart';
@@ -125,5 +126,104 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('还没有想法'), findsOneWidget);
+  });
+
+  // ── 返回键拦截 ──
+
+  /// 模拟按一次系统返回键。
+  ///
+  /// 走的是 WidgetsBinding.handlePopRoute，和真机上按下返回键的路径一致：
+  /// 它会依次问每个 observer，最终落到根路由的 PopScope。
+  Future<void> pressBack(WidgetTester tester) async {
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+  }
+
+  /// 拦截平台通道，用来断言是否真的调用了退出。
+  List<String> capturePlatformCalls(WidgetTester tester) {
+    final calls = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call.method);
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    return calls;
+  }
+
+  testWidgets('在非首个 Tab 按返回，先回到想法 Tab，不退出', (tester) async {
+    final calls = capturePlatformCalls(tester);
+    await tester.pumpWidget(
+      _wrap(mode: ThemeMode.light, notes: notes, site: site),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      4,
+    );
+
+    await pressBack(tester);
+
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+      reason: '非首个 Tab 按返回应该只回到想法，不该直接退出 App',
+    );
+    expect(calls, isNot(contains('SystemNavigator.pop')));
+  });
+
+  testWidgets('在首个 Tab 按返回，只提示，不退出', (tester) async {
+    final calls = capturePlatformCalls(tester);
+    await tester.pumpWidget(
+      _wrap(mode: ThemeMode.light, notes: notes, site: site),
+    );
+    await tester.pumpAndSettle();
+
+    await pressBack(tester);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('再按一次返回键退出'), findsOneWidget);
+    expect(calls, isNot(contains('SystemNavigator.pop')));
+
+    // 等提示自然消失，避免测试结束时留下未触发的 Timer
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('2 秒内再按一次才真正退出', (tester) async {
+    final calls = capturePlatformCalls(tester);
+    await tester.pumpWidget(
+      _wrap(mode: ThemeMode.light, notes: notes, site: site),
+    );
+    await tester.pumpAndSettle();
+
+    await pressBack(tester);
+    await tester.pump(const Duration(milliseconds: 300));
+    await pressBack(tester);
+
+    expect(calls, contains('SystemNavigator.pop'));
+  });
+
+  testWidgets('超过 2 秒窗口后再按，重新计时而不是直接退出', (tester) async {
+    final calls = capturePlatformCalls(tester);
+    await tester.pumpWidget(
+      _wrap(mode: ThemeMode.light, notes: notes, site: site),
+    );
+    await tester.pumpAndSettle();
+
+    await pressBack(tester);
+    await tester.pump(const Duration(seconds: 3)); // 窗口过期
+
+    await pressBack(tester);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(calls, isNot(contains('SystemNavigator.pop')));
+    expect(find.text('再按一次返回键退出'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 3));
   });
 }
