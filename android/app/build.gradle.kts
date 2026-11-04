@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 import java.util.Properties
 
 plugins {
@@ -97,8 +99,10 @@ flutter {
 
 // 只在真的要出 release 包时才拦。放在配置阶段直接 throw 会连 `flutter run`
 // 的 debug 构建一起打断，所以挂到 taskGraph 上——此时已知道本次要跑哪些任务。
+// whenReady 的 Action<TaskExecutionGraph> 在 Kotlin DSL 里是带接收者的 lambda，
+// 所以 TaskExecutionGraph 的成员（allTasks）可以直接访问，没有隐式 it。
 gradle.taskGraph.whenReady {
-    val buildingRelease = it.allTasks.any { t ->
+    val buildingRelease = allTasks.any { t ->
         t.name == "assembleRelease" || t.name == "bundleRelease" ||
             t.name.startsWith("packageRelease") || t.name == "installRelease"
     }
