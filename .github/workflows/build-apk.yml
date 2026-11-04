@@ -91,13 +91,21 @@ jobs:
       - name: Verify APK signature
         run: |
           # 确认产物真的用的是 release 证书，而不是 debug.keystore。
-          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk \
-            | grep -E "Signer #1 certificate (DN|SHA-256)" | tee /tmp/certs.txt
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(ls "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER=$(find "$SDK" -type f -name apksigner 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "sdk=$SDK"
+          echo "apksigner=$APKSIGNER"
+          [ -n "$APKSIGNER" ] || { echo "::error::找不到 apksigner"; exit 1; }
+          "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
           grep -q "CN=ttwyce" /tmp/certs.txt || {
             echo "::error::APK 未使用预期的 release 证书签名"
             exit 1
           }
+          echo "::notice::APK 已由 release 证书签名"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
