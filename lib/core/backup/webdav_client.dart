@@ -177,7 +177,7 @@ class WebDavClient {
       ..idleTimeout = const Duration(seconds: 10);
     if (allowBadCertificate) {
       // 只在用户明确允许时放开；否则自签证书一律握手失败
-      client.badCertificateCallback = (_, __, ___) => true;
+      client.badCertificateCallback = (_, _, _) => true;
     }
 
     try {

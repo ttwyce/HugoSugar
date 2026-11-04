@@ -1103,7 +1103,6 @@ const Map<String, L10nEntry> kStrings = {
         'This will merge with your local notes: the newer copy wins for each '
         'note, and notes only on this device are kept.',
   ),
-  '恢复失败': (zh: '恢复失败', en: 'Restore failed'),
   '恢复完成': (zh: '恢复完成', en: 'Restore complete'),
   '恢复完成：新增 {} 条，更新 {} 条，保留本地较新 {} 条': (
     zh: '恢复完成：新增 {} 条，更新 {} 条，保留本地较新 {} 条',
