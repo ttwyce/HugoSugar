@@ -57,6 +57,23 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
+      - name: Restore release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          # 密钥库不入库，构建时从 Secrets 还原到 runner 临时目录（随 runner 销毁）。
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::未配置 ANDROID_KEYSTORE_BASE64，release 包无法签名"
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/hugosugar-release.jks"
+          chmod 600 "$RUNNER_TEMP/hugosugar-release.jks"
+          # 口令错就在这里失败，而不是等 gradle 构建到一半才发现。
+          keytool -list -keystore "$RUNNER_TEMP/hugosugar-release.jks" \
+            -storepass "$ANDROID_STORE_PASSWORD" > /dev/null
+          echo "keystore OK ($(stat -c%s "$RUNNER_TEMP/hugosugar-release.jks") bytes)"
+
       - name: Analyze
         run: flutter analyze
 
@@ -64,7 +81,23 @@ jobs:
         run: flutter test
 
       - name: Build APK (release)
+        env:
+          HUGO_STORE_FILE: ${{ runner.temp }}/hugosugar-release.jks
+          HUGO_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          HUGO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HUGO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release --target-platform android-arm64
+
+      - name: Verify APK signature
+        run: |
+          # 确认产物真的用的是 release 证书，而不是 debug.keystore。
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk \
+            | grep -E "Signer #1 certificate (DN|SHA-256)" | tee /tmp/certs.txt
+          grep -q "CN=ttwyce" /tmp/certs.txt || {
+            echo "::error::APK 未使用预期的 release 证书签名"
+            exit 1
+          }
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

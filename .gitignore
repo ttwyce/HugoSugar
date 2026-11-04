@@ -77,3 +77,10 @@ macos/Flutter/Flutter-ephemeral.xcconfig
 macos/Flutter/ephemeral/
 **/*.g.dart.lock
 
+
+# ── Release 签名 ──
+# 私钥与口令一旦进版本库就等于公开（本仓库是 public）。
+android/key.properties
+*.jks
+*.keystore
+!android/app/debug.keystore

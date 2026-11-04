@@ -1,9 +1,34 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// ── Release 签名配置 ──
+// 凭据来源优先级：环境变量（CI 注入） > android/key.properties（本地）。
+// 两者都不存在时，release 构建会直接失败，而不是静默退回 debug 签名——
+// 用 debug 签出的包装了之后，换成正式签名无法覆盖升级，必须先卸载，
+// 而卸载会清掉全部本地数据。这种错误宁可让构建报错。
+val signingProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun signingValue(envKey: String, propKey: String): String? =
+    System.getenv(envKey)?.takeIf { it.isNotBlank() }
+        ?: signingProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
+
+val releaseStorePath = signingValue("HUGO_STORE_FILE", "storeFile")
+val releaseStorePassword = signingValue("HUGO_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingValue("HUGO_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = signingValue("HUGO_KEY_PASSWORD", "keyPassword")
+
+val hasReleaseSigning = listOf(
+    releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword
+).all { it != null } && file(releaseStorePath!!).exists()
 
 android {
     namespace = "com.ttwyce.hugosugar"
@@ -44,15 +69,53 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                // 显式指定，避免 AGP 因扩展名猜测失败（.jks / .keystore 都按 PKCS12 读）。
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+// 只在真的要出 release 包时才拦。放在配置阶段直接 throw 会连 `flutter run`
+// 的 debug 构建一起打断，所以挂到 taskGraph 上——此时已知道本次要跑哪些任务。
+gradle.taskGraph.whenReady {
+    val buildingRelease = it.allTasks.any { t ->
+        t.name == "assembleRelease" || t.name == "bundleRelease" ||
+            t.name.startsWith("packageRelease") || t.name == "installRelease"
+    }
+    if (buildingRelease && !hasReleaseSigning) {
+        throw GradleException(
+            """
+            |
+            |缺少 release 签名配置，已中止构建。
+            |
+            |本地构建：在 android/key.properties 中填写 storeFile / storePassword /
+            |          keyAlias / keyPassword 四项。
+            |CI 构建：配置仓库 Secrets —— ANDROID_KEYSTORE_BASE64、ANDROID_STORE_PASSWORD、
+            |          ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD。
+            |
+            |不要用 debug 签名产出正式包：日后换成正式签名无法覆盖升级，
+            |必须先卸载，而卸载会清掉 App 的全部本地数据。
+            |""".trimMargin()
+        )
+    }
 }
