@@ -8,7 +8,11 @@ import '../../core/site/site_controller.dart';
 import '../../core/site/token_store.dart';
 import '../../shared/widgets.dart';
 
-/// 推送页（M4）：变更列表 → commit message → push → Deploy Hook。
+/// 推送页（M4）：变更列表 → commit message → commit + push。
+///
+/// Deploy Hook 已移除：推送成功后由平台监听仓库自动构建，不需要 App 侧触发。
+/// commit 与 push 都走后台 isolate（`GitService.commitAndPush`），
+/// 避免 libgit2 的同步 FFI 阻塞 UI。
 ///
 /// 设计取舍：
 /// - 变更列表**只读**，不支持勾选部分文件。原因：文章编辑的改动天然是

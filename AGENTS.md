@@ -233,28 +233,61 @@ grep -E 'Built |FAILURE|rror:' build.log
 | `/usr/local/bin/flutter` | 软链（无环境依赖兜底） |
 | `android/gradle.properties` | **aapt2 覆盖 + daemon 关闭，丢了就完蛋** |
 | `android/build.gradle.kts` | **NDK + ABI 全局钉死（铁律四/五）** |
-| `android/app/build.gradle.kts` | ndkVersion 固定 + abiFilters |
+| `android/app/build.gradle.kts` | ndkVersion 固定 + abiFilters + **release 签名（缺配置即失败）** |
+| `.github/workflows/build-apk.yml` | CI：analyze → test → 签名 → 构建 → 验证产物 |
 | `docs/ARM64_BUILD_TROUBLESHOOTING.md` | **原生插件构建问题完整手册** |
 | `docs/FEATURE_SPEC.md` | 功能与需求方案（v4，依赖清单已校正） |
 | `docs/DESIGN_SPEC.md` | UI 设计规范 |
 | `lib/app/i18n/strings.dart` | 中英文案唯一真相源（中文当 key） |
 | `lib/app/i18n/l10n_scope.dart` | `tr/T/TP` 取词入口 |
+| `lib/core/backup/backup_crypto.dart` | **备份加密容器格式；改动即破坏兼容，需升版本号** |
+| `lib/core/site/git_service.dart` | Git 操作；`commitAndPush` 走后台 isolate |
+
+### 两条容易踩的实现约定
+
+**1. 耗时的 CPU / FFI 计算不要放在主 isolate。**
+PBKDF2 21 万轮会让界面冻住 1–3 秒；libgit2 的 commit / push 是同步 FFI，网络期间
+同样阻塞 UI。两者都已改为 `Isolate.run`，并用 `bool.hasEnvironment('dart.library.io')`
+做编译期判断，web 上回退同步实现。新增类似的重活请照此处理。
+
+**2. 备份加密容器是持久化格式。**
+头部字段（magic / 版本 / KDF 轮数 / 盐 / nonce）整体作为 AAD 参与认证。
+动任何一个字节，所有历史备份都会解不开。要改动必须同时升 `version` 并保留旧版解密路径。
+
 
 > ⚠️ **依赖名易混，务必看清：是 `git2dart`，不是 `libgit2dart`。**
 > `libgit2dart` 已 DISCONTINUED，且只支持 64 位 Linux/macOS/Windows，
 > **Android/iOS 完全不可用**，选错会卡死在 M0 第一步。
 > 当前实际使用 `git2dart: ^0.5.6`，以 `pubspec.yaml` 为准。
 
-### 纯 Dart 依赖（无原生构建风险）
+### 依赖约束
 
-项目里所有依赖都必须是**纯 Dart**。带原生插件的包会重新引入 NDK/CMake 问题。
+**默认原则：能用纯 Dart 就不用原生插件。** 每加一个原生插件就多一份 NDK/CMake 风险，
+且只能出一种 ABI。
+
+以下是**已经存在的原生插件**，已验证 ARM64 构建与真机运行，属于既有负担：
+
+| 包 | 用途 | 原生部分 |
+|---|---|---|
+| `git2dart` ^0.5.6 | Git 操作 | 预编译 libgit2 `.so`，仅 `arm64-v8a` |
+| `path_provider` ^2.1.3 | 应用私有目录 | 平台通道 |
+| `file_picker` ^8.1.2 | SAF 选目录（导出导入） | 平台通道 |
+| `share_plus` ^10.0.2 | 系统分享面板 | 平台通道 |
+
+> 早先这里写的是「所有依赖必须是纯 Dart」，与现实不符，已按实际清单更正。
+> 新增依赖时的规则是：**先找纯 Dart 替代**；确实不行，必须确认 ARM64 构建与
+> `flutter test` 都通过后再提交，并在本节登记。
+
+纯 Dart 依赖（无原生构建风险）：
 
 | 包 | 用途 | 备注 |
 |---|---|---|
 | `markdown` ^7.3.1 | AI 回复渲染 | Dart 官方维护；只取 AST，自绘 Widget |
 | `fast_gbk` ^1.0.0 | GBK/GB2312 解码 | 网页抓取用；`environment: sdk >=2.12`，无 `flutter.plugin` 段 |
 | `yaml` ^3.1.2 | Front Matter | — |
-| `http` ^1.2.1 | GitHub API / AI 端点 | — |
+| `http` ^1.2.1 | GitHub API / AI 端点 / WebDAV | — |
+| `archive` ^3.6.1 | gzip 与 zip 打包 | 备份压缩、文章导出 |
+| `pointycastle` ^3.9.1 | AES-256-GCM / PBKDF2 | 备份加密；纯 Dart，无 `flutter.plugin` 段 |
 
 > ⚠️ **不要用 `flutter_markdown`**。它会拖进一堆渲染层依赖，在 ARM64 proot 下
 > 曾多次引发构建问题。需要 Markdown 渲染时看 `lib/features/ai/chat_markdown.dart`

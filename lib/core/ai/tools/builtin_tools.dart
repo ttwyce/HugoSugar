@@ -161,7 +161,7 @@ class FetchError implements Exception {
   String toString() => message;
 }
 
-/// 构建 6 个工具。
+/// 构建内置工具集（想法 4 个、文章 2 个、网页 1 个、记忆 3 个，共 10 个）。
 ///
 /// 参数全部是**已经加载好的数据**（而不是 store 对象），
 /// 这样工具本身是纯函数式的，能单测，也不会因为 IO 异常把循环搞崩。

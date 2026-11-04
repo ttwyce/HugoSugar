@@ -46,6 +46,12 @@
 | 目标平台 | Android（首发）→ iOS → Desktop | 三端共用一套代码，几乎零分支 |
 | 原生代码量 | **约 80 行 Kotlin**（仅 SAF 目录选择，M6 才做） | 其余全 Dart |
 
+> **落地偏差（以实际代码为准）**
+>
+> - **状态管理**：实际用 `ChangeNotifier` + controller，未引入 Riverpod。页面数量与状态耦合度都在可控范围，controller 已把数据层与 UI 解耦，加一层框架收益不抵成本。
+> - **原生插件非零**：`git2dart`（libgit2 FFI）、`path_provider`、`file_picker`、`share_plus`。但没有**自写**原生代码，`MainActivity.kt` 至今仍是 5 行模板。
+> - **SAF 目录选择**：没有手写那 80 行 Kotlin，直接用 `file_picker`，行为等价且少一份维护负担。
+
 ### 2.1 为什么 iOS 是一等公民
 
 原方案的 iOS 障碍只有一个：终端需要 `fork/exec`（iOS 禁止）。终端砍掉后，写作、Git、AI、笔记全部是纯 Dart 能做的事，iOS 与 Android 无差别。
@@ -61,7 +67,7 @@
 | 终端模拟器（PTY / ANSI / 选区 / 附加键） | ~5,000 | 全砍 |
 | Busybox + env.tar.xz + libexec.so | 二进制 | 全砍 |
 | Hugo 版本管理（多版本 / 软链 / deb / xz） | ~700 | 全砍 |
-| 本地构建 + 实时 server 预览 | ~500 | 全砍 → 换 Vercel Deploy Hook |
+| 本地构建 + 实时 server 预览 | ~500 | 全砍 → 交给平台自动构建 |
 | Shell 脚本管理 + `cmdExer` | ~400 | 全砍 |
 | `Safety` 命令风险分级 | 半 | 缩为 PathGuard（约 30 行） |
 | AI 工具 `run_command` / `site_info` / `delete_path` | — | 全砍 |
@@ -74,10 +80,10 @@
 | **Markdown 编辑器** | 语法高亮、查找替换、自动保存、字数统计 | P0 |
 | **笔记（灵感）** | CRUD、分类、置顶、回收站、搜索、转文章 | P0 |
 | **Git 推送** | PAT 登录、clone / pull / commit / push、变更列表 | P0 |
-| **AI 写作 Agent** | 流式对话、6 个工具、审批、Diff、撤销 | P1 |
+| **AI 写作 Agent** | 流式对话、10 个工具、审批、Diff、撤销 | P1 |
 | 预览 | Markdown 本地渲染（非 Hugo 渲染，不解析 shortcode） | P1 |
 | 主题配色 | 7 套 + Material You 动态取色 | P2 |
-| Vercel Deploy Hook | push 后可选触发部署 | P2 |
+| ~~Vercel Deploy Hook~~ | push 后触发部署 | 未采用（平台监听仓库自动构建即可） |
 | SAF 目录导出/导入 | 文件对用户可见 | P2（M6） |
 
 ---
@@ -97,7 +103,6 @@ class Site {
   final String localPath;   // 本地仓库根目录
   final String? remoteUrl;  // origin
   final String contentDir;  // 相对路径，默认 "content/posts"
-  final String? deployHook; // Vercel Deploy Hook URL
   final DateTime lastOpened;
 }
 
@@ -270,7 +275,8 @@ String? validatePostPath(Site site, String relPath) {
 
 **M6 的增强方案（可选）**：加「导出为 zip 到 SAF 目录」/「从 SAF 导入」，一次性拷贝，**不做实时镜像**——避免双向同步与冲突这种无底洞。
 
-> 唯一需要的原生代码（M6）：约 80 行 Kotlin，实现 `ACTION_OPEN_DOCUMENT_TREE` + `takePersistableUriPermission`。只做目录选择，不执行任何进程，不破坏「纯 Flutter」前提。
+> 原方案的「唯一需要的原生代码（约 80 行 Kotlin）」最终没有落地：`file_picker` 已覆盖
+> 目录选择需求，没必要为等价能力再维护一份平台通道。
 
 **目录布局**：
 
@@ -496,6 +502,9 @@ class Memory {
 
 ## 五、目录结构
 
+> 以下是**方案期**的目录设想，未按此落地。实际结构（`lib/core/*` 平铺、无 go_router /
+> drift / Riverpod / secure_storage）见 README 的「架构与目录」。
+
 ```
 lib/
 ├─ app/
@@ -515,10 +524,10 @@ lib/
 │  ├─ note/              # CRUD / 分类 / 回收站 / 转文章
 │  ├─ editor/            # Markdown 编辑器 + 查找替换
 │  ├─ preview/           # md 本地渲染
-│  ├─ git/               # git2dart 封装 + PAT 认证 + Deploy Hook
+│  ├─ git/               # git2dart 封装 + PAT 认证
 │  ├─ ai/
 │  │  ├─ engine/         # 流式对话 + tool 循环 + 取消
-│  │  ├─ tools/          # 6 个工具实现 + PathGuard
+│  │  ├─ tools/          # 10 个工具实现 + PathGuard
 │  │  ├─ fetch/          # fetch_url + SSRF 拦截 + HTML→文本 + 缓存
 │  │  ├─ profile/        # 多 API 配置（baseUrl / model / key）
 │  │  └─ prompt/         # default_prompt.dart + SystemPrompt 构建
@@ -572,15 +581,20 @@ dev_dependencies:
 | **M1** | 站点接入 | clone 仓库、识别 `content/posts`、站点信息卡、`SiteStorage` 抽象落地 | ✅ 已完成 |
 | **M2** | 文章 + 编辑器 | 四类列表、Front Matter 生成、语法高亮、查找替换、自动保存 | ✅ 已完成 |
 | **M3** | 笔记 | CRUD、分类、置顶、回收站、搜索、**转文章** | ✅ 已完成 |
-| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示 | ✅ 已完成（待真机验证） |
-| **M5** | AI Agent | 流式对话、6 工具、审批 Diff、撤销、想法注入、`fetch_url`、多端点、上下文压缩、**对话撤回/重发/编辑**、**System Prompt 可编辑** | ✅ 已完成 |
-| **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 | 🚧 进行中（i18n、正文字体/字号已完成） |
+| **M4** | Git 推送 | 变更列表、commit message、push、冲突提示 | ✅ 已完成（**真机验证通过**） |
+| **M5** | AI Agent | 流式对话、10 工具、审批 Diff、撤销、想法注入、`fetch_url`、多端点、上下文压缩、**对话撤回/重发/编辑**、**System Prompt 可编辑** | ✅ 已完成 |
+| **M6** | 打磨 | 主题、i18n、SAF 导出导入、桌面适配、iOS 打通 | ✅ 已完成（桌面与 iOS 未验证） |
+| **M7** | 想法备份（原计划外） | WebDAV + 客户端加密（PBKDF2 + AES-256-GCM）、手动/每日自动、合并恢复 | ✅ 已完成（**真机验证通过**） |
+| **M8** | 分发（原计划外） | release 签名（RSA 4096 / PKCS12）、CI 构建与产物校验证书 | ✅ 已完成（**真机验证通过**） |
 
 > **M0 的 git 冒烟是硬门槛。** 已在真机验证通过：
 > `clone → 改写 → commit → push` 全链路跑通，`libgit2.so` 以 `arm64-v8a` 正确打包
 > （`file` 确认 ELF 64-bit LSB shared object, ARM aarch64）。
 > 若日后换库或换环境，这一步要重新验证。
 > 备用方案（未启用）：GitHub Contents API（纯 HTTP），代价是失去 clone 整仓与历史查看。
+
+> **M4 已于后续版本复验**：`commit + push` 改为后台 isolate 执行后，真机再次跑通，
+> 确认 libgit2 在非主 isolate 里加载与网络传输均正常。
 
 ---
 
@@ -591,7 +605,10 @@ dev_dependencies:
 | `git2dart` 在 Android/iOS 链接失败 | 阻断 M4 | **M0 已验证通过**（真机 clone→commit→push 全通）；备选 Contents API |
 | ARM64 上 NDK / ABI 配错导致构建失败 | 阻断一切 | NDK 钉死 28.2.13676358、ABI 仅 arm64-v8a 且从根项目注入，见 `docs/ARM64_BUILD_TROUBLESHOOTING.md` |
 | 大仓库 clone 慢 / 超时 | 体验差 | 只 clone `content/` 相关分支？否——改用 shallow clone `--depth 1` |
-| PAT 泄露 | 严重 | 存 `flutter_secure_storage`，不落日志，支持一键清除 |
+| PAT 泄露 | 严重 | 存 App 私有目录下的 `token` 文件并 `chmod 600`（不落日志，支持一键清除）。注：未用 `flutter_secure_storage`，那需要引入新的原生插件 |
+| 备份口令丢失 | 备份永久不可恢复 | 设计使然，无后门；UI 在设置口令时明确提示，建议另存一份 |
+| 备份容器格式变更 | 历史备份全部解不开 | 头部整体参与 AAD 认证；改格式必须升 `version` 并保留旧版解密路径 |
+| 备份过程卡顿 | 体验 | PBKDF2 21 万轮与 gzip 已移入后台 isolate |
 | `fetch_url` 被抓去访问内网 | 安全 | 私网黑名单 + 每跳重校验 |
 | 编辑器大文件卡顿 | 体验 | 超过 200KB 提示「文件较大」，关闭实时高亮 |
 | AI 生成内容不合预期 | 体验 | 必须有 Diff 审批 + 撤销；置顶笔记提供风格约束 |

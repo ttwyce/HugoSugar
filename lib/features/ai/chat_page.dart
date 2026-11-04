@@ -15,7 +15,7 @@ import 'thinking_block.dart';
 /// AI 对话页。
 ///
 /// 之前这一页是硬编码的假消息（「我已经读过你置顶的两条笔记」），
-/// 现在接的是真实的 Agent 循环：流式输出、6 个工具、Diff 审批、撤销。
+/// 现在接的是真实的 Agent 循环：流式输出、10 个工具、Diff 审批、撤销。
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.controller});
 
