@@ -888,37 +888,32 @@ class SiteController extends ChangeNotifier {
       final msg = commitMessage.trim().isEmpty
           ? CommitMessage.suggest(pending.map((e) => e.path).toList())
           : commitMessage.trim();
-      sha = GitService.commitAll(
+      step('提交并推送中…');
+      // commit 与 push 一起丢到后台 isolate：两者都是同步 FFI，
+      // 在主 isolate 上跑会让整个界面在 push 期间完全冻结。
+      sha = await GitService.commitAndPush(
         repoPath: root,
         message: msg,
         authorName: name,
         authorEmail: email,
         branch: cfg.branch,
-      );
-      step('已提交 $sha（${pending.length} 个文件）');
-    } on GitOperationError catch (e) {
-      step('提交失败：${e.rawMessage}');
-      return PushOutcome.failure(_humanize(e), log: log);
-    }
-
-    // 4) push
-    try {
-      step('推送中…');
-      GitService.push(
-        repoPath: root,
-        branch: cfg.branch,
         pat: pat.trim(),
       );
-      step('推送成功');
+      step('已推送 $sha（${pending.length} 个文件）');
     } on GitOperationError catch (e) {
-      step('推送失败：${e.rawMessage}');
-      final hint = e.looksLikeNetwork
-          ? '网络不稳定，可重试；提交已在本地，不会丢。'
-          : '推送被拒绝时通常是远端有新提交。提交已在本地，可以稍后重试。';
-      return PushOutcome.failure(
-        '${_humanize(e)}\n$hint',
-        log: log,
-      );
+      // 两个阶段的失败后果不同，文案不能混：push 失败时提交已经在本地了。
+      if (e.step == 'push') {
+        step('已提交，但推送失败：${e.rawMessage}');
+        final hint = e.looksLikeNetwork
+            ? '网络不稳定，可重试；提交已在本地，不会丢。'
+            : '推送被拒绝时通常是远端有新提交。提交已在本地，可以稍后重试。';
+        return PushOutcome.failure(
+          '${_humanize(e)}\n$hint',
+          log: log,
+        );
+      }
+      step('提交失败：${e.rawMessage}');
+      return PushOutcome.failure(_humanize(e), log: log);
     }
 
     // 5) 刷新站点（.git 变了但文章内容没变，这里主要是更新 lastSyncedAt）

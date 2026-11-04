@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -8,6 +9,12 @@ import '../note/note_store.dart';
 import 'backup_config.dart';
 import 'backup_crypto.dart';
 import 'webdav_client.dart';
+
+/// 当前平台是否支持真正的后台 isolate。
+///
+/// `dart:isolate` 在 web 上只有 stub，调用会抛 UnsupportedError。
+/// 用编译期常量判断，dart2js 下整段分支会被 tree-shake 掉。
+const bool _supportsIsolate = bool.hasEnvironment('dart.library.io');
 
 /// 备份包的明文结构（加密前）。
 ///
@@ -150,16 +157,9 @@ class BackupService {
       );
       final jsonBytes = utf8.encode(jsonEncode(payload.toJson()));
 
-      // 顺序不能反：GCM 密文不可压缩，必须先压后加
-      final compressed = GZipEncoder().encode(jsonBytes);
-      if (compressed == null) {
-        return const BackupOutcome(ok: false, message: '压缩失败');
-      }
-
-      final sealed = BackupCrypto.encrypt(
-        plaintext: Uint8List.fromList(compressed),
-        passphrase: passphrase,
-      );
+      // 顺序不能反：GCM 密文不可压缩，必须先压后加。
+      // 压缩与加密一起丢到后台 isolate，主线程不参与。
+      final sealed = await _seal(jsonBytes, passphrase);
 
       final client = _client();
       await client.ensureCollection(config.remoteDir);
@@ -276,16 +276,49 @@ class BackupService {
     if (!BackupCrypto.looksLikeBackup(bytes)) {
       throw const BackupCryptoException('这个文件不是 HugoSugar 的备份');
     }
-    final plain = BackupCrypto.decrypt(
-      container: bytes,
-      passphrase: passphrase,
-    );
-    final unpacked = GZipDecoder().decodeBytes(plain);
-    final decoded = jsonDecode(utf8.decode(unpacked));
+    final plain = await _open(bytes, passphrase);
+    final decoded = jsonDecode(plain);
     if (decoded is! Map) {
       throw const BackupCryptoException('备份内容格式不正确');
     }
     return BackupPayload.fromJson(Map<String, Object?>.from(decoded));
+  }
+
+  // ── 加解密：一律在后台 isolate 执行 ──────────────────
+  //
+  // PBKDF2 是 21 万轮纯 Dart 计算，手机上要 1-3 秒。放在主 isolate 上会占满
+  // 事件循环：按下「立即备份」之后界面一帧都画不出来，看起来就是卡死。
+  // gzip 顺带一起搬进 isolate——数据已经在那儿了，省一次跨 isolate 拷贝。
+
+  static Uint8List _sealSync(Uint8List jsonBytes, String passphrase) {
+    final compressed = GZipEncoder().encode(jsonBytes);
+    if (compressed == null) {
+      throw const BackupCryptoException('压缩失败');
+    }
+    return BackupCrypto.encrypt(
+      plaintext: Uint8List.fromList(compressed),
+      passphrase: passphrase,
+    );
+  }
+
+  static String _openSync(Uint8List container, String passphrase) {
+    final plain = BackupCrypto.decrypt(
+      container: container,
+      passphrase: passphrase,
+    );
+    return utf8.decode(GZipDecoder().decodeBytes(plain));
+  }
+
+  Future<Uint8List> _seal(Uint8List jsonBytes, String passphrase) {
+    if (!_supportsIsolate) return Future.value(_sealSync(jsonBytes, passphrase));
+    return Isolate.run(() => _sealSync(jsonBytes, passphrase));
+  }
+
+  Future<String> _open(Uint8List container, String passphrase) {
+    if (!_supportsIsolate) {
+      return Future.value(_openSync(container, passphrase));
+    }
+    return Isolate.run(() => _openSync(container, passphrase));
   }
 
   String? _validate(String passphrase) {

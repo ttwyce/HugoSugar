@@ -1,9 +1,13 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:git2dart/git2dart.dart';
 import 'package:path/path.dart' as p;
 
 import 'git_change.dart';
+
+/// 当前平台是否支持真正的后台 isolate（web 上 dart:isolate 只有 stub）。
+const bool _supportsIsolate = bool.hasEnvironment('dart.library.io');
 
 /// 一次 clone / fetch 的进度
 class GitProgress {
@@ -467,6 +471,48 @@ class GitService {
       remote?.free();
       repo?.free();
     }
+  }
+
+  /// commit + push，在后台 isolate 里跑。
+  ///
+  /// 为什么必须这样：libgit2 是同步 FFI，[commitAll] 和 [push] 都是阻塞调用，
+  /// push 还要走完整的网络往返。放在主 isolate 上时，按下「推送」后 Dart
+  /// 事件循环被占住，界面几秒到几十秒一帧都画不出来——用户看到的就是卡死。
+  ///
+  /// 注意：这里**不转发进度回调**。Callable 不可跨 isolate 传递，而且
+  /// push 阶段的进度本来就不可靠（对象打包完才开始传）。UI 侧用步骤文案
+  /// 表达进度即可。
+  static Future<String> commitAndPush({
+    required String repoPath,
+    required String message,
+    required String authorName,
+    required String authorEmail,
+    required String branch,
+    required String pat,
+  }) {
+    if (!_supportsIsolate) {
+      final sha = commitAll(
+        repoPath: repoPath,
+        message: message,
+        authorName: authorName,
+        authorEmail: authorEmail,
+        branch: branch,
+      );
+      push(repoPath: repoPath, branch: branch, pat: pat);
+      return Future.value(sha);
+    }
+
+    return Isolate.run(() {
+      final sha = commitAll(
+        repoPath: repoPath,
+        message: message,
+        authorName: authorName,
+        authorEmail: authorEmail,
+        branch: branch,
+      );
+      push(repoPath: repoPath, branch: branch, pat: pat);
+      return sha;
+    });
   }
 
   /// 本地 HEAD 相对 origin 的领先/落后。
