@@ -243,7 +243,7 @@ grep -E 'Built |FAILURE|rror:' build.log
 | `lib/core/backup/backup_crypto.dart` | **备份加密容器格式；改动即破坏兼容，需升版本号** |
 | `lib/core/site/git_service.dart` | Git 操作；`commitAndPush` 走后台 isolate |
 
-### 两条容易踩的实现约定
+### 三条容易踩的实现约定
 
 **1. 耗时的 CPU / FFI 计算不要放在主 isolate。**
 PBKDF2 21 万轮会让界面冻住 1–3 秒；libgit2 的 commit / push 是同步 FFI，网络期间
@@ -253,6 +253,14 @@ PBKDF2 21 万轮会让界面冻住 1–3 秒；libgit2 的 commit / push 是同�
 **2. 备份加密容器是持久化格式。**
 头部字段（magic / 版本 / KDF 轮数 / 盐 / nonce）整体作为 AAD 参与认证。
 动任何一个字节，所有历史备份都会解不开。要改动必须同时升 `version` 并保留旧版解密路径。
+
+**3. 拉取只做快进，不做自动合并。**
+`GitService.pull` 用 `fetch` + `GitReset.hard` 实现，只在「本地没有领先提交」时移动 HEAD。
+两边都改了同一篇时直接拒绝（`GitOperationError.step == 'pull-diverged'`）。
+不要改成 `merge`：Hugo 文章按整文件读写，冲突标记在 App 里既无法展示也无法编辑，
+给用户一堆 `<<<<<<<` 比明确拒绝更糟。工作区脏时同样拒绝（`pull-dirty`），
+除非调用方显式传 `discardLocalChanges: true`——那是唯一可能弄丢用户输入的分支，
+UI 必须先让用户确认并列出会被丢弃的文件。
 
 
 > ⚠️ **依赖名易混，务必看清：是 `git2dart`，不是 `libgit2dart`。**

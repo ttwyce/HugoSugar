@@ -1135,6 +1135,42 @@ const Map<String, L10nEntry> kStrings = {
         'between only see ciphertext; the file name is fixed so it does not '
         'reveal how many notes you have.',
   ),
+
+  // ── 拉取（pull）──
+  '拉取': (zh: '拉取', en: 'Pull'),
+  '拉取远端更新': (zh: '拉取远端更新', en: 'Pull from remote'),
+  '拉取完成': (zh: '拉取完成', en: 'Pull complete'),
+  '拉取失败': (zh: '拉取失败', en: 'Pull failed'),
+  '本地有未提交的改动': (
+    zh: '本地有未提交的改动',
+    en: 'You have uncommitted changes',
+  ),
+  '拉取会先丢弃这些改动再同步远端，丢弃后无法恢复。': (
+    zh: '拉取会先丢弃这些改动再同步远端，丢弃后无法恢复。',
+    en: 'Pulling will discard these changes and then sync with the remote. '
+        'This cannot be undone.',
+  ),
+  '· 另外 {} 个文件': (
+    zh: '· 另外 {} 个文件',
+    en: '· and {} more files',
+  ),
+  '丢弃并拉取': (zh: '丢弃并拉取', en: 'Discard and pull'),
+  '远端有本地没有的改动。直接推送会被拒绝，需要先拉取同步。': (
+    zh: '远端有本地没有的改动。直接推送会被拒绝，需要先拉取同步。',
+    en: 'The remote has changes you do not have. Pushing would be rejected, '
+        'so pull first.',
+  ),
+
+  // ── 文章搜索 ──
+  '搜索标题、正文、标签': (
+    zh: '搜索标题、正文、标签',
+    en: 'Search titles, text and tags',
+  ),
+  '搜索：{}': (zh: '搜索：{}', en: 'Search: {}'),
+  '没有匹配的文章': (
+    zh: '没有匹配的文章',
+    en: 'No matching posts',
+  ),
 };
 
 /// 取文案。

@@ -795,6 +795,86 @@ class SiteController extends ChangeNotifier {
         changes.map((e) => e.path).toList(),
       );
 
+  /// 从远端拉取更新。
+  ///
+  /// 与 [push] 对称：同样的 pat 来源、同样的步骤日志、同样的错误翻译。
+  /// 成功后必须重建文章列表 —— 工作区文件已经变了，不刷新的话界面
+  /// 还显示拉取前的旧内容，用户会以为拉取没生效。
+  Future<PullOutcome> pull({
+    required String pat,
+    bool discardLocalChanges = false,
+    void Function(String)? onStep,
+  }) async {
+    final root = repoPath;
+    final cfg = _config;
+    if (root == null || cfg == null) {
+      return PullOutcome.failure('站点未就绪');
+    }
+    if (pat.trim().isEmpty) {
+      return PullOutcome.failure('缺少 GitHub 访问令牌，请到站点页重新填写');
+    }
+
+    final log = <String>[];
+    void step(String s) {
+      log.add(s);
+      onStep?.call(s);
+    }
+
+    try {
+      if (discardLocalChanges) {
+        step('已确认丢弃本地未提交的改动');
+      }
+      step('正在获取远端更新…');
+      final result = await GitService.pullAsync(
+        repoPath: root,
+        branch: cfg.branch,
+        pat: pat.trim(),
+        discardLocalChanges: discardLocalChanges,
+      );
+
+      if (!result.updated) {
+        step('已是最新，没有可拉取的内容');
+        return PullOutcome.success(message: '已是最新', log: log);
+      }
+
+      step('已拉取 ${result.behind} 个提交');
+      step('正在刷新文章列表…');
+      await _refreshPosts();
+      await _touchSynced();
+      notifyListeners();
+
+      return PullOutcome.success(
+        message: '已拉取 ${result.behind} 个提交',
+        log: log,
+      );
+    } on GitOperationError catch (e) {
+      step('拉取失败：${e.rawMessage}');
+      return PullOutcome.failure(_humanizePull(e), log: log);
+    }
+  }
+
+  /// 拉取专用的错误翻译。
+  ///
+  /// 与 [_humanize] 分开：那三个 step（dirty / diverged / empty）是
+  /// git 之外的「前置条件不满足」，不属于 libgit2 报错，文案要给出
+  /// 下一步怎么做，而不是复述原文。
+  String _humanizePull(GitOperationError e) {
+    switch (e.step) {
+      case 'pull-dirty':
+        return '${e.rawMessage}。请先提交或撤销这些改动再拉取——'
+            '直接拉取会覆盖你尚未提交的内容。';
+      case 'pull-diverged':
+        return '${e.rawMessage}。本地与远端分叉了，无法快进合并。'
+            '请先在电脑上 pull 并解决冲突，再回到这里拉取。';
+      case 'pull-branch':
+        return '${e.rawMessage}，无法拉取。请确认站点设置里的分支名是否正确。';
+      case 'pull-empty':
+        return '${e.rawMessage}，无法拉取。建议在站点页重新克隆仓库。';
+      default:
+        return _humanize(e);
+    }
+  }
+
   /// 执行一次完整推送：commit → push。
   ///
   /// 只推 GitHub，不碰任何部署平台 —— 部署由平台监听仓库自行触发。
@@ -845,7 +925,7 @@ class SiteController extends ChangeNotifier {
       step('本地落后远端 ${div.behind} 个提交');
       return PushOutcome.failure(
         '远端有 ${div.behind} 个你本地没有的提交。'
-        '为避免覆盖别人的改动，请先拉取同步（站点页 → 重新克隆）。',
+        '为避免覆盖别人的改动，请先点「拉取远端更新」同步后再推送。',
         log: log,
         needsPull: true,
       );
@@ -904,9 +984,18 @@ class SiteController extends ChangeNotifier {
       // 两个阶段的失败后果不同，文案不能混：push 失败时提交已经在本地了。
       if (e.step == 'push') {
         step('已提交，但推送失败：${e.rawMessage}');
+        final s = e.rawMessage.toLowerCase();
+        // 被拒多半是远端有新提交。此时本地提交已经落在本地仓库，
+        // 拉取属于「分叉」，所以这里只提示、不把 needsPull 设成 true ——
+        // 点了拉取也拉不动，给了按钮反而更困惑。
+        final rejected = s.contains('non-fast-forward') ||
+            s.contains('rejected') ||
+            s.contains('fetch first');
         final hint = e.looksLikeNetwork
             ? '网络不稳定，可重试；提交已在本地，不会丢。'
-            : '推送被拒绝时通常是远端有新提交。提交已在本地，可以稍后重试。';
+            : rejected
+                ? '远端有本地没有的提交。提交已在本地，请到电脑上 pull 并推送一次，之后再回到这里。'
+                : '推送失败。提交已在本地，可以稍后重试。';
         return PushOutcome.failure(
           '${_humanize(e)}\n$hint',
           log: log,
@@ -1120,6 +1209,37 @@ class PushOutcome {
         log: log,
         needsPull: needsPull,
       );
+}
+
+/// 一次拉取的结果。
+///
+/// 比 [PushOutcome] 简单：拉取没有「提交了一半」这种中间态，
+/// 也没有需要用户二次决定的标记 —— 失败就是失败，工作区不会被改动。
+class PullOutcome {
+  const PullOutcome._({
+    required this.ok,
+    this.message,
+    this.log = const [],
+  });
+
+  final bool ok;
+
+  /// 结果说明（成功时是「已拉取 N 个提交」，失败时是 humanize 后的原因）
+  final String? message;
+
+  final List<String> log;
+
+  static PullOutcome success({
+    required String message,
+    List<String> log = const [],
+  }) =>
+      PullOutcome._(ok: true, message: message, log: log);
+
+  static PullOutcome failure(
+    String message, {
+    List<String> log = const [],
+  }) =>
+      PullOutcome._(ok: false, message: message, log: log);
 }
 
 /// 一次提交要用的作者身份。

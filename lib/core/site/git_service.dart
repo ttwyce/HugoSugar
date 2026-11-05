@@ -48,6 +48,25 @@ class GitStatusSummary {
   }
 }
 
+/// 一次拉取的结果
+class GitPullResult {
+  const GitPullResult({
+    required this.updated,
+    required this.behind,
+    this.branch,
+  });
+
+  /// 是否真的更新了工作区（false 表示本来就是最新）
+  final bool updated;
+
+  /// 落后远端的提交数，也就是这次拉下来的提交数
+  final int behind;
+
+  final String? branch;
+
+  String get label => updated ? '已拉取 $behind 个提交' : '已是最新';
+}
+
 /// Git 操作失败。
 ///
 /// 保留 libgit2 的原始错误码和文本 —— 不要在这一层把错误「翻译」成
@@ -471,6 +490,155 @@ class GitService {
       remote?.free();
       repo?.free();
     }
+  }
+
+  /// 拉取远端更新到本地工作区。
+  ///
+  /// 只做 **fast-forward**，不做自动 merge。理由是 Hugo 文章按整文件读写，
+  /// 一旦两边改了同一篇，文本级的冲突标记在 App 里既没法展示也没法编辑，
+  /// 与其给用户一堆 `<<<<<<<`，不如直接拒绝并让他到电脑上处理。
+  ///
+  /// 三种情形：
+  /// - 远端没有新提交 → `updated: false`，什么都不做
+  /// - 本地没有领先提交 → 硬移到远端提交（这就是 fast-forward）
+  /// - 两边都有新提交（分叉）→ 抛 [GitOperationError]，step 为 `pull-diverged`
+  ///
+  /// 工作区有未提交改动时直接拒绝（step 为 `pull-dirty`）：hard reset 会
+  /// 把这些改动连同用户刚写了一半的文章一起丢掉，不能默默执行。
+  /// 调用方确认用户知情后，可以传 [discardLocalChanges] 强制继续。
+  static GitPullResult pull({
+    required String repoPath,
+    required String branch,
+    required String pat,
+    bool discardLocalChanges = false,
+    void Function(GitProgress)? onProgress,
+  }) {
+    Repository? repo;
+    Remote? remote;
+    try {
+      repo = Repository.open(repoPath);
+      if (repo.isEmpty) {
+        throw GitOperationError(
+          step: 'pull-empty',
+          rawMessage: '本地仓库还没有任何提交',
+        );
+      }
+
+      // 1) 工作区必须干净。status 里过滤 ignored 和 current，
+      //    剩下的都是「会受 reset 影响」的文件。
+      var dirty = 0;
+      for (final entry in repo.status.entries) {
+        final flags = entry.value;
+        if (flags.contains(GitStatus.ignored)) continue;
+        if (flags.contains(GitStatus.current)) continue;
+        dirty++;
+      }
+      if (dirty > 0 && !discardLocalChanges) {
+        throw GitOperationError(
+          step: 'pull-dirty',
+          rawMessage: '工作区有 $dirty 个文件尚未提交',
+        );
+      }
+
+      // 2) fetch。refspec 留空表示用仓库自带的默认配置，
+      //    这样不依赖 origin 的具体配置形态。
+      remote = Remote.lookup(repo: repo, name: 'origin');
+      remote.fetch(
+        callbacks: Callbacks(
+          credentials: UserPass(username: 'x-access-token', password: pat),
+          transferProgress: (prog) {
+            onProgress?.call(
+              GitProgress(
+                phase: 'fetch',
+                receivedObjects: prog.receivedObjects,
+                totalObjects: prog.totalObjects,
+              ),
+            );
+          },
+        ),
+      );
+
+      // 3) 取远端跟踪分支。fetch 之后它已经被更新到最新。
+      Oid remoteOid;
+      try {
+        remoteOid = Reference.lookup(
+          repo: repo,
+          name: 'refs/remotes/origin/$branch',
+        ).target;
+      } on Git2DartError {
+        throw GitOperationError(
+          step: 'pull-branch',
+          rawMessage: '远端没有分支 $branch',
+        );
+      }
+
+      final local = repo.head.target;
+      if (local.sha == remoteOid.sha) {
+        return GitPullResult(updated: false, behind: 0, branch: branch);
+      }
+
+      // 4) 判断是否可快进。aheadBehind 返回 [ahead, behind]：
+      //    behind 是远端有、本地没有的提交数。
+      final ab = repo.aheadBehind(local: local, upstream: remoteOid);
+      final ahead = ab.isNotEmpty ? ab[0] : 0;
+      final behind = ab.length > 1 ? ab[1] : 0;
+
+      if (behind == 0) {
+        // 远端是本地祖先，没有可拉的东西
+        return GitPullResult(updated: false, behind: 0, branch: branch);
+      }
+      if (ahead > 0) {
+        throw GitOperationError(
+          step: 'pull-diverged',
+          rawMessage: '本地有 $ahead 个未推送的提交，远端有 $behind 个新提交',
+        );
+      }
+
+      // 5) 快进。hard reset 会同时更新 HEAD、索引和工作区，
+      //    工作区已在第 1 步确认干净，不存在丢改动的风险。
+      repo.reset(oid: remoteOid, resetType: GitReset.hard);
+
+      return GitPullResult(updated: true, behind: behind, branch: branch);
+    } on GitOperationError {
+      rethrow;
+    } on Git2DartError catch (e) {
+      throw GitOperationError(step: 'pull', rawMessage: e.message);
+    } catch (e) {
+      throw GitOperationError(step: 'pull', rawMessage: '$e');
+    } finally {
+      remote?.free();
+      repo?.free();
+    }
+  }
+
+  /// [pull] 的后台版本。
+  ///
+  /// 理由同 [commitAndPush]：fetch 是同步 FFI + 完整网络往返，
+  /// 主 isolate 上跑会把界面冻住。
+  static Future<GitPullResult> pullAsync({
+    required String repoPath,
+    required String branch,
+    required String pat,
+    bool discardLocalChanges = false,
+  }) {
+    if (!_supportsIsolate) {
+      return Future.value(
+        pull(
+          repoPath: repoPath,
+          branch: branch,
+          pat: pat,
+          discardLocalChanges: discardLocalChanges,
+        ),
+      );
+    }
+    return Isolate.run(
+      () => pull(
+        repoPath: repoPath,
+        branch: branch,
+        pat: pat,
+        discardLocalChanges: discardLocalChanges,
+      ),
+    );
   }
 
   /// commit + push，在后台 isolate 里跑。

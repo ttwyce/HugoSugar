@@ -111,7 +111,17 @@ class _PushPageState extends State<PushPage> {
                     icon: Icons.warning_amber_outlined,
                     color: c.danger,
                     title: TP('落后远端 {} 个提交', [div.behind]),
-                    body: T('远端有本地没有的改动。直接推送会被拒绝，请先到「站点」页重新克隆同步。'),
+                    body: T('远端有本地没有的改动。直接推送会被拒绝，需要先拉取同步。'),
+                    action: OutlinedButton.icon(
+                      onPressed: _busy ? null : _pull,
+                      icon: const Icon(Icons.download_outlined, size: 16),
+                      label: Text(context.tr(T('拉取远端更新'))),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: c.danger,
+                        side: BorderSide(color: c.danger.withValues(alpha: 0.4)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
                   ),
                 if (conflicts.isNotEmpty)
                   _banner(
@@ -301,6 +311,7 @@ class _PushPageState extends State<PushPage> {
     required Color color,
     required String title,
     required String body,
+    Widget? action,
   }) {
     return Container(
       margin: const EdgeInsets.fromLTRB(
@@ -341,6 +352,10 @@ class _PushPageState extends State<PushPage> {
                     color: context.appColors.textSecondary,
                   ),
                 ),
+                if (action != null) ...[
+                  const SizedBox(height: 8),
+                  action,
+                ],
               ],
             ),
           ),
@@ -403,28 +418,128 @@ class _PushPageState extends State<PushPage> {
     );
   }
 
-  Future<void> _push() async {
-    // 决定用哪个 token：输入框优先，否则读已保存的
+  /// 拉取远端更新。
+  ///
+  /// 工作区有未提交改动时必须先让用户明确同意丢弃 —— fast-forward 用的是
+  /// hard reset，那些改动会连同未保存的正文一起没掉。这是唯一一处
+  /// 「可能弄丢用户输入」的操作，所以确认弹窗必须列出受影响文件，
+  /// 而不是一句笼统的「确定吗」。
+  Future<void> _pull() async {
+    final token = await _resolveToken();
+    if (token == null || !mounted) return;
+
+    var discard = false;
+    if (_changes.isNotEmpty) {
+      final names = _changes.take(5).map((e) => e.path).toList();
+      final more = _changes.length - names.length;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.tr(T('本地有未提交的改动'))),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.tr(T('拉取会先丢弃这些改动再同步远端，丢弃后无法恢复。')),
+                style: const TextStyle(fontSize: 13, height: 1.6),
+              ),
+              const SizedBox(height: 10),
+              for (final n in names)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '· $n',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              if (more > 0)
+                Text(
+                  TP('· 另外 {} 个文件', [more]),
+                  style: const TextStyle(fontSize: 12),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(context.tr(T('取消'))),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(context.tr(T('丢弃并拉取'))),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      discard = true;
+    }
+
+    setState(() {
+      _busy = true;
+      _log.clear();
+    });
+
+    final outcome = await widget.controller.pull(
+      pat: token,
+      discardLocalChanges: discard,
+      onStep: (s) {
+        if (!mounted) return;
+        setState(() => _log.add(s));
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    // 拉取改了工作区，无论成败都重新读一次变更，避免界面停在旧状态
+    await _refresh();
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.message ?? context.tr(outcome.ok ? '拉取完成' : '拉取失败'),
+        ),
+        duration: Duration(seconds: outcome.ok ? 3 : 6),
+      ),
+    );
+  }
+
+  /// 取本次操作用的 token：输入框优先，其次已保存的。
+  /// 顺手把新输入的值存起来。返回 null 表示用户还没配 token。
+  Future<String?> _resolveToken() async {
     var token = _tokenCtrl.text.trim();
+    final typed = token.isNotEmpty;
     if (token.isEmpty) {
       final store = await TokenStore.open();
       token = await store.read() ?? '';
     }
+    if (!mounted) return null;
     if (token.isEmpty) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.tr(T('请先填写 GitHub 访问令牌')))),
       );
-      return;
+      return null;
     }
-
-    // 顺手把新输入的 token 存起来，下次不用再填
-    if (_tokenCtrl.text.trim().isNotEmpty) {
+    if (typed) {
       final store = await TokenStore.open();
       await store.write(token);
       _tokenCtrl.clear();
       await _loadToken();
     }
+    return token;
+  }
+
+  Future<void> _push() async {
+    final token = await _resolveToken();
+    if (token == null || !mounted) return;
 
     setState(() {
       _busy = true;
@@ -451,12 +566,22 @@ class _PushPageState extends State<PushPage> {
       if (!mounted) return;
       _showResultDialog(outcome);
     } else {
+      // 被拒原因是「落后远端」时，直接给一个可点的拉取入口 ——
+      // 只说「请先拉取」而页面上没有拉取按钮，等于把用户卡在死路上。
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(outcome.message ?? T('推送失败')),
-          duration: const Duration(seconds: 4),
+          content: Text(outcome.message ?? context.tr(T('推送失败'))),
+          duration: const Duration(seconds: 6),
+          action: outcome.needsPull
+              ? SnackBarAction(
+                  label: context.tr(T('拉取')),
+                  onPressed: _pull,
+                )
+              : null,
         ),
       );
+      // 失败后也刷新一次：落后状态可能在这次尝试中变化
+      await _refresh();
     }
   }
 

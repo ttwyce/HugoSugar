@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/i18n/l10n_scope.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/post/front_matter.dart';
+import '../../core/post/post_search.dart';
 import '../../core/post/post_transfer.dart';
 import '../../core/post/post_transfer_service.dart';
 import '../../core/site/site_controller.dart';
@@ -38,6 +39,33 @@ class _PostsPageState extends State<PostsPage> {
   /// 是否展开筛选栏
   bool _showFilters = false;
 
+  /// 搜索框是否展开
+  bool _searchOpen = false;
+  final _searchCtrl = TextEditingController();
+
+  /// 已生效的搜索词（小写归一化后用于匹配）
+  String _query = '';
+
+  /// 负责搜索框的开合与词条维护。
+  ///
+  /// 关掉搜索必须同时清空词条：否则列表还停在过滤后的结果上，
+  /// 界面上却看不到任何「正在搜索」的提示，用户会以为文章丢了。
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchCtrl.clear();
+        _query = '';
+      }
+    });
+  }
+
+  void _setQuery(String raw) {
+    final q = raw.trim().toLowerCase();
+    if (q == _query) return;
+    setState(() => _query = q);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +74,7 @@ class _PostsPageState extends State<PostsPage> {
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     widget.siteController.removeListener(_onChanged);
     super.dispose();
   }
@@ -206,6 +235,10 @@ class _PostsPageState extends State<PostsPage> {
   List<PostDocument> _visible(SiteController sc) {
     var list = sc.posts;
 
+    if (_query.isNotEmpty) {
+      list = list.where(_search.matches).toList();
+    }
+
     switch (_filter) {
       case _Filter.drafts:
         list = list.where((p) => p.draft).toList();
@@ -226,17 +259,31 @@ class _PostsPageState extends State<PostsPage> {
     return list;
   }
 
+  /// 当前生效的搜索条件。query 已小写归一化。
+  PostSearch get _search => PostSearch(_query);
+
   @override
   Widget build(BuildContext context) {
     final sc = widget.siteController;
     final visible = _visible(sc);
     final hasActiveFilter =
-        _filter != _Filter.all || _category != null || _tag != null;
+        _filter != _Filter.all ||
+        _category != null ||
+        _tag != null ||
+        _query.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(context.tr(T('文章'))),
         actions: [
+          // 搜索占掉了原来「刷新」按钮的位置：六个图标在 360dp 宽的机型上
+          // 会把标题挤掉。刷新并没有消失——列表本身套着 RefreshIndicator，
+          // 下拉即可刷新，而且它在文章页里本来就是低频操作。
+          IconButton(
+            onPressed: sc.stage == SiteStage.ready ? _toggleSearch : null,
+            icon: Icon(_searchOpen ? Icons.search_off : Icons.search),
+            tooltip: context.tr(T('搜索')),
+          ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready
                 ? () => setState(() => _showFilters = !_showFilters)
@@ -245,11 +292,6 @@ class _PostsPageState extends State<PostsPage> {
               _showFilters ? Icons.filter_list_off : Icons.filter_list,
             ),
             tooltip: context.tr(T('筛选')),
-          ),
-          IconButton(
-            onPressed: sc.stage == SiteStage.ready ? sc.refresh : null,
-            icon: const Icon(Icons.refresh),
-            tooltip: context.tr(T('刷新')),
           ),
           IconButton(
             onPressed: sc.stage == SiteStage.ready
@@ -320,6 +362,41 @@ class _PostsPageState extends State<PostsPage> {
           child: ListView(
             padding: const EdgeInsets.only(bottom: 96),
             children: [
+              if (_searchOpen)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.md,
+                    AppSpace.sm,
+                    AppSpace.md,
+                    0,
+                  ),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    autofocus: true,
+                    onChanged: _setQuery,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: context.tr(T('搜索标题、正文、标签')),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      filled: true,
+                      fillColor: context.appColors.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        borderSide: BorderSide.none,
+                      ),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close, size: 16),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _setQuery('');
+                              },
+                            ),
+                    ),
+                  ),
+                ),
               if (_showFilters) ...[
                 _FilterBar(
                   filter: _filter,
@@ -368,6 +445,8 @@ class _PostsPageState extends State<PostsPage> {
                           _filter = _Filter.all;
                           _category = null;
                           _tag = null;
+                          _query = '';
+                          _searchCtrl.clear();
                         }),
                         style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact,
@@ -381,14 +460,19 @@ class _PostsPageState extends State<PostsPage> {
                 ),
               if (visible.isEmpty)
                 EmptyState(
-                  icon: Icons.filter_alt_off_outlined,
-                  text: T('没有符合条件的文章'),
+                  icon: _query.isNotEmpty
+                      ? Icons.search_off
+                      : Icons.filter_alt_off_outlined,
+                  text: _query.isNotEmpty
+                      ? T('没有匹配的文章')
+                      : T('没有符合条件的文章'),
                 )
               else
                 for (var i = 0; i < visible.length; i++) ...[
                   if (i > 0) const IndentedDivider(),
                   _PostRow(
                     post: visible[i],
+                    snippet: _search.snippet(visible[i]),
                     onTap: () => _open(visible[i]),
                     onLongPress: () => _showPostMenu(sc, visible[i]),
                   ),
@@ -411,6 +495,7 @@ class _PostsPageState extends State<PostsPage> {
 
   String _describeFilter() {
     final parts = <String>[];
+    if (_query.isNotEmpty) parts.add(TP('搜索：{}', [_query]));
     if (_filter == _Filter.drafts) parts.add(T('草稿'));
     if (_filter == _Filter.published) parts.add(T('已发布'));
     if (_category != null) parts.add(TP('分类：{}', [_category]));
@@ -847,11 +932,17 @@ class _PostRow extends StatelessWidget {
     required this.post,
     required this.onTap,
     required this.onLongPress,
+    this.snippet,
   });
 
   final PostDocument post;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+
+  /// 搜索命中正文时的上下文片段。非空时**替换**摘要显示，
+  /// 因为摘要来自 Front Matter 的 description，多半不含搜索词，
+  /// 同时显示两段反而更乱。
+  final String? snippet;
 
   @override
   Widget build(BuildContext context) {
@@ -897,10 +988,10 @@ class _PostRow extends StatelessWidget {
               ],
             ),
 
-            if (post.excerpt.isNotEmpty) ...[
+            if ((snippet ?? post.excerpt).isNotEmpty) ...[
               const SizedBox(height: AppSpace.xxs),
               Text(
-                post.excerpt,
+                snippet ?? post.excerpt,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
